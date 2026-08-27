@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>即デコカメラ - ChekiSnap</title>
+  <!-- Tailwind CSS & QRCode.js (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    html, body {
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow: hidden;
+      background-color: #090d16;
+      color: white;
+      height: 100%;
+      width: 100%;
+      position: fixed;
+    }
+
+    /* 撮影画面用チェキフレーム構造 */
+    .cheki-frame {
+      background: white;
+      color: #1f2937;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      padding: 12px 12px 48px 12px;
+    }
+    .cheki-photo-area {
+      position: relative;
+      width: 100%;
+      height: 0;
+      padding-bottom: 125%; /* 厳密な 4:5 比率 (チェキ規格) */
+      background: #111827;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .cheki-photo-content {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* インカメラ時のリアルタイム鏡像反転 */
+    .mirror-mode {
+      transform: scaleX(-1);
+    }
+
+    /* スタンプ要素スタイル */
+    .stamp-element {
+      position: absolute;
+      font-size: 2.8rem;
+      cursor: move;
+      touch-action: none;
+      transform: translate(-50%, -50%);
+      line-height: 1;
+      filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.4));
+      user-select: none;
+      pointer-events: auto;
+      z-index: 30;
+    }
+    .stamp-element.selected {
+      outline: 2px dashed #ec4899;
+      outline-offset: 4px;
+      border-radius: 8px;
+      background-color: rgba(236, 72, 153, 0.2);
+    }
+    .stamp-delete-btn {
+      position: absolute;
+      top: -12px;
+      right: -12px;
+      width: 24px;
+      height: 24px;
+      background-color: #ef4444;
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+      cursor: pointer;
+      z-index: 40;
+    }
+
+    .modal-backdrop {
+      background-color: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+    }
+
+    #toast-notification {
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+  </style>
+</head>
+<body class="h-full w-full flex flex-col justify-between font-sans">
+
+  <!-- 保存完了トースト通知 -->
+  <div id="toast-notification" class="pointer-events-none opacity-0 -translate-y-4 fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-5 py-2.5 rounded-full font-bold shadow-2xl flex items-center gap-2 text-sm border border-emerald-400">
+    <i data-lucide="check-circle" class="w-5 h-5"></i>
+    <span id="toast-message">画像を保存しました</span>
+  </div>
+
+  <!-- ==================== 1. 撮影画面 ==================== -->
+  <div id="camera-screen" class="relative h-full w-full flex flex-col justify-between p-2">
+    <!-- 上部ツールバー -->
+    <div class="flex justify-between items-center z-10 p-2 bg-gray-900/80 rounded-2xl backdrop-blur-md border border-gray-800">
+      <button id="btn-switch-camera" class="flex items-center gap-1.5 px-3 py-2 bg-pink-600 hover:bg-pink-500 rounded-xl active:scale-95 transition text-xs font-bold shadow">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        <span id="label-camera-mode">イン📷</span>
+      </button>
+      
+      <button id="btn-toggle-flash" class="flex items-center gap-1 px-3 py-2 bg-gray-800 rounded-xl active:scale-95 transition text-xs">
+        <i data-lucide="zap-off" id="icon-flash" class="w-4 h-4 text-gray-400"></i>
+        <span id="label-flash">ライトOFF</span>
+      </button>
+
+      <button id="btn-toggle-stabilizer" class="flex items-center gap-1 px-3 py-2 bg-gray-800 rounded-xl text-xs active:scale-95 transition">
+        <i data-lucide="shield-check" id="icon-stabilizer" class="w-4 h-4 text-gray-400"></i>
+        <span>補正</span>
+      </button>
+
+      <button id="btn-timer-menu" class="flex items-center gap-1 px-3 py-2 bg-gray-800 rounded-xl text-xs active:scale-95 transition">
+        <i data-lucide="timer" class="w-4 h-4 text-amber-400"></i>
+        <span id="label-timer">オフ</span>
+      </button>
+    </div>
+
+    <!-- カメラプレビュー（チェキフレーム） -->
+    <div class="flex-1 flex items-center justify-center p-2">
+      <div id="cheki-camera-box" class="cheki-frame w-full max-w-sm">
+        <div class="cheki-photo-area">
+          <video id="webcam" autoplay playsinline muted class="cheki-photo-content mirror-mode"></video>
+          
+          <!-- カメラ未起動時のエラー・案内表示 -->
+          <div id="camera-error-overlay" class="hidden absolute inset-0 bg-gray-900/95 flex flex-col items-center justify-center p-4 text-center z-20">
+            <i data-lucide="camera-off" class="w-12 h-12 text-pink-500 mb-2"></i>
+            <h3 class="text-base font-bold text-white mb-1">カメラを起動できません</h3>
+            <p id="camera-error-msg" class="text-xs text-gray-300 mb-4 leading-relaxed">カメラのアクセス許可を確認してください。<br>LINE等のアプリ内ブラウザをご利用の場合はSafari/Chromeで開き直してください。</p>
+            <button id="btn-retry-camera" class="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs rounded-xl shadow active:scale-95">
+              再読み込み・再試行
+            </button>
+          </div>
+
+          <div id="timer-countdown" class="hidden absolute inset-0 bg-black/60 flex items-center justify-center text-8xl font-black text-amber-400 z-20">
+            3
+          </div>
+        </div>
+        <div class="absolute bottom-3 left-4 right-4 flex justify-between items-center text-xs font-mono font-bold text-gray-500">
+          <span id="frame-date">2026.08.27</span>
+          <span id="frame-id">ID: ----</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 下部コントロール（シャッターボタン） -->
+    <div class="flex justify-center items-center pb-6 z-10">
+      <button id="btn-shutter" class="w-20 h-20 bg-white rounded-full border-4 border-pink-500 flex items-center justify-center shadow-2xl active:scale-90 transition">
+        <div class="w-16 h-16 bg-pink-500 rounded-full border-2 border-white"></div>
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== 2. 撮影後の確認画面 ==================== -->
+  <div id="photo-confirm-screen" class="hidden absolute inset-0 bg-gray-950 z-30 flex flex-col justify-between p-4">
+    <div class="text-center py-2 text-lg font-bold text-pink-400">撮影の確認</div>
+    
+    <div class="flex-1 flex items-center justify-center">
+      <div class="cheki-frame w-full max-w-sm">
+        <div class="cheki-photo-area">
+          <img id="captured-preview" class="cheki-photo-content" />
+        </div>
+        <div class="absolute bottom-3 left-4 right-4 flex justify-between items-center text-xs font-mono font-bold text-gray-500">
+          <span id="confirm-date">2026.08.27</span>
+          <span id="confirm-id">ID: ----</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-3 my-2 w-full max-w-sm mx-auto pb-4">
+      <button id="btn-save-and-draw" class="w-full py-3.5 bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition flex items-center justify-center gap-2 text-base">
+        <i data-lucide="download" class="w-5 h-5"></i> 保存して描画へ (原本保存)
+      </button>
+      <button id="btn-nosave-and-draw" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition flex items-center justify-center gap-2 text-base">
+        <i data-lucide="pen-tool" class="w-5 h-5"></i> 保存せず描画へ
+      </button>
+      <button id="btn-retake" class="w-full py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-2xl active:scale-95 transition text-sm">
+        撮り直し
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== 3. 描画・デコレーション画面 ==================== -->
+  <div id="draw-screen" class="hidden absolute inset-0 bg-gray-950 z-40 flex flex-col justify-between">
+    <div id="stamp-guide-banner" class="hidden absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-pink-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg flex items-center gap-2">
+      <span id="stamp-guide-text">⭐ 画面をタップして配置してください</span>
+      <button id="btn-cancel-stamp-mode" class="bg-pink-800 rounded-full w-5 h-5 flex items-center justify-center text-xs">✕</button>
+    </div>
+
+    <div id="canvas-container" class="relative flex-1 w-full h-full overflow-hidden bg-black touch-none flex items-center justify-center">
+      <canvas id="photo-canvas" class="absolute inset-0 w-full h-full object-contain pointer-events-none z-0"></canvas>
+      <canvas id="draw-canvas" class="absolute inset-0 w-full h-full object-contain touch-none z-10"></canvas>
+      <div id="stamp-layer" class="absolute inset-0 touch-none z-20 pointer-events-none"></div>
+    </div>
+
+    <div class="bg-gray-900/95 backdrop-blur-md p-3 pb-6 flex justify-around items-center border-t border-gray-800 z-30">
+      <button id="btn-open-color" class="flex flex-col items-center gap-1 text-xs text-gray-300 active:scale-95">
+        <div id="current-color-indicator" class="w-8 h-8 rounded-full border-2 border-white shadow bg-black"></div>
+        <span>色</span>
+      </button>
+
+      <button id="btn-open-pen" class="flex flex-col items-center gap-1 text-xs text-gray-300 active:scale-95 relative">
+        <div class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center border border-gray-600">
+          <i data-lucide="pen" class="w-4 h-4 text-pink-400"></i>
+        </div>
+        <div class="flex items-center gap-0.5">
+          <span>ペン</span>
+          <span id="badge-pen-size" class="text-[10px] bg-pink-600 text-white px-1 rounded-md font-bold">中</span>
+        </div>
+      </button>
+
+      <button id="btn-open-eraser" class="flex flex-col items-center gap-1 text-xs text-gray-300 active:scale-95 relative">
+        <div class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center border border-gray-600">
+          <i data-lucide="eraser" class="w-4 h-4 text-amber-400"></i>
+        </div>
+        <div class="flex items-center gap-0.5">
+          <span>消しゴム</span>
+          <span id="badge-eraser-size" class="text-[10px] bg-amber-600 text-white px-1 rounded-md font-bold">中</span>
+        </div>
+      </button>
+
+      <button id="btn-open-stamp" class="flex flex-col items-center gap-1 text-xs text-gray-300 active:scale-95">
+        <div class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center border border-gray-600 text-lg">
+          ⭐
+        </div>
+        <span>スタンプ</span>
+      </button>
+
+      <button id="btn-draw-complete" class="px-5 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition flex items-center gap-1">
+        <span>完了</span>
+        <i data-lucide="check" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== 4. 描画完了・仕上がり確認画面 ==================== -->
+  <div id="deco-preview-screen" class="hidden absolute inset-0 bg-gray-950 z-45 flex flex-col justify-between p-4">
+    <div class="text-center py-2 text-lg font-bold text-pink-400">デコ仕上がり確認</div>
+    
+    <div class="flex-1 flex items-center justify-center py-2 overflow-hidden">
+      <img id="deco-preview-image" class="max-h-full max-w-full object-contain rounded-xl shadow-2xl border border-gray-800" />
+    </div>
+
+    <div class="flex flex-col gap-3 my-2 w-full max-w-sm mx-auto pb-4">
+      <button id="btn-confirm-and-qr" class="w-full py-3.5 bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition flex items-center justify-center gap-2 text-base">
+        <i data-lucide="qrcode" class="w-5 h-5"></i> 確定 (保存して超圧縮QR作成)
+      </button>
+      <button id="btn-back-to-edit" class="w-full py-3 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold rounded-2xl active:scale-95 transition text-center text-sm">
+        追加・修正する (描画へ戻る)
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== 5. 超圧縮＆QR表示画面 ==================== -->
+  <div id="qr-screen" class="hidden absolute inset-0 bg-gray-950 z-50 flex flex-col justify-between p-4 overflow-y-auto">
+    <div class="text-center py-2">
+      <h2 class="text-xl font-bold text-pink-400">デコチェキ共有用QR完成！</h2>
+      <p class="text-xs text-gray-400 mt-1">ファンのスマホのカメラでQRコードを読み取ってください</p>
+    </div>
+
+    <div class="flex-1 flex flex-col items-center justify-center gap-4 my-2">
+      <div class="max-w-[180px] shadow-2xl rounded-lg overflow-hidden border border-gray-700">
+        <img id="final-compressed-preview" class="w-full h-auto object-contain" />
+      </div>
+
+      <div class="bg-white p-4 rounded-2xl shadow-2xl flex flex-col items-center min-w-[220px]">
+        <div id="qr-loading" class="flex flex-col items-center py-6 gap-2">
+          <div class="w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+          <span class="text-xs text-gray-600 font-bold">QRコード生成中...</span>
+        </div>
+        <div id="qrcode-container" class="hidden"></div>
+        <p class="text-[10px] text-gray-600 mt-2 font-mono font-bold text-center" id="qr-data-size">QRリンク生成完了</p>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-2.5 w-full max-w-sm mx-auto pb-4">
+      <button id="btn-share-native" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition text-center text-sm flex items-center justify-center gap-2">
+        <i data-lucide="share-2" class="w-4 h-4"></i> スマホの共有機能で送る
+      </button>
+      <button id="btn-finish-all" class="w-full py-3.5 bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition text-center text-base">
+        撮影画面に戻る
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== モーダルパネル類 ==================== -->
+
+  <div id="modal-save-fallback" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-3xl p-5 w-full max-w-xs text-center border border-gray-700 shadow-2xl mb-6">
+      <h3 class="text-base font-bold mb-2 text-white">画像を保存</h3>
+      <p class="text-xs text-gray-300 mb-3">以下の画像を長押し（または右クリック）して保存してください</p>
+      <div class="max-h-[50vh] overflow-y-auto mb-4 flex justify-center">
+        <img id="fallback-save-img" class="max-w-full h-auto rounded-lg shadow border border-gray-600" />
+      </div>
+      <button id="btn-close-fallback" class="w-full py-2.5 bg-gray-700 text-white font-bold rounded-xl text-sm">閉じる</button>
+    </div>
+  </div>
+
+  <div id="modal-timer" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-3xl p-6 w-full max-w-xs text-center border border-gray-700 shadow-2xl mb-12">
+      <h3 class="text-lg font-bold mb-4 text-white">タイマー設定</h3>
+      <div class="flex flex-col gap-2.5">
+        <button class="btn-select-timer py-3 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white" data-value="0">オフ</button>
+        <button class="btn-select-timer py-3 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white" data-value="3">3秒</button>
+        <button class="btn-select-timer py-3 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white" data-value="5">5秒</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-color" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-3xl p-6 w-full max-w-xs border border-gray-700 shadow-2xl mb-12">
+      <h3 class="text-lg font-bold mb-4 text-center text-white">カラー選択</h3>
+      <div class="grid grid-cols-3 gap-3" id="color-palette-grid">
+      </div>
+      <button class="btn-close-modal w-full mt-5 py-3 bg-gray-700 text-white font-bold rounded-2xl">決定</button>
+    </div>
+  </div>
+
+  <div id="modal-pen" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-3xl p-6 w-full max-w-xs text-center border border-gray-700 shadow-2xl mb-12">
+      <h3 class="text-lg font-bold mb-4 text-white">ペン先の太さ</h3>
+      <div class="flex flex-col gap-3">
+        <button class="btn-select-pen py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="14" data-label="太">
+          <span>太ペン</span> <div class="w-6 h-6 rounded-full bg-white"></div>
+        </button>
+        <button class="btn-select-pen py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="7" data-label="中">
+          <span>中ペン（標準）</span> <div class="w-4 h-4 rounded-full bg-white"></div>
+        </button>
+        <button class="btn-select-pen py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="3" data-label="細">
+          <span>細ペン</span> <div class="w-2 h-2 rounded-full bg-white"></div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-eraser" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-3xl p-6 w-full max-w-xs text-center border border-gray-700 shadow-2xl mb-12">
+      <h3 class="text-lg font-bold mb-4 text-white">消しゴム設定</h3>
+      <div class="flex flex-col gap-3">
+        <button class="btn-select-eraser py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="32" data-label="太">
+          <span>太い</span> <div class="w-7 h-7 rounded-full border-2 border-white"></div>
+        </button>
+        <button class="btn-select-eraser py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="18" data-label="中">
+          <span>中（標準）</span> <div class="w-5 h-5 rounded-full border-2 border-white"></div>
+        </button>
+        <button class="btn-select-eraser py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="8" data-label="細">
+          <span>細い</span> <div class="w-3 h-3 rounded-full border-2 border-white"></div>
+        </button>
+        <hr class="border-gray-700 my-1">
+        <button id="btn-clear-all" class="py-3.5 bg-red-600/90 hover:bg-red-600 rounded-2xl font-bold text-white flex items-center justify-center gap-2">
+          <i data-lucide="trash-2" class="w-5 h-5"></i> 全消し 🗑️
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-stamp" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-3xl p-6 w-full max-w-xs text-center border border-gray-700 shadow-2xl mb-12">
+      <h3 class="text-lg font-bold mb-4 text-white">スタンプ選択</h3>
+      <div class="grid grid-cols-2 gap-4">
+        <button class="btn-select-stamp p-4 bg-gray-700 hover:bg-gray-600 rounded-2xl text-4xl" data-stamp="⭐">⭐</button>
+        <button class="btn-select-stamp p-4 bg-gray-700 hover:bg-gray-600 rounded-2xl text-4xl" data-stamp="💖">💖</button>
+        <button class="btn-select-stamp p-4 bg-gray-700 hover:bg-gray-600 rounded-2xl text-4xl" data-stamp="✨">✨</button>
+        <button class="btn-select-stamp p-4 bg-gray-700 hover:bg-gray-600 rounded-2xl text-4xl" data-stamp="🐾">🐾</button>
+      </div>
+      <button class="btn-close-modal w-full mt-5 py-3 bg-gray-700 text-white font-bold rounded-2xl">閉じる</button>
+    </div>
+  </div>
+
+  <!-- JavaScript メインロジック -->
+  <script>
+    const state = {
+      currentFacingMode: 'user',
+      flashOn: false,
+      stabilizerOn: false,
+      timerSec: 0,
+      currentPhotoData: null,
+      currentPhotoID: '',
+      currentDateStr: '',
+      
+      // 描画状態
+      isDrawing: false,
+      currentMode: 'pen', // 'pen' | 'eraser' | 'stamp'
+      currentColor: '#000000',
+      penLineWidth: 7,
+      eraserLineWidth: 18,
+      penSizeLabel: '中',
+      eraserSizeLabel: '中',
+      
+      // スタンプ管理
+      stamps: [],
+      pendingStampChar: null,
+      activeDragStampId: null,
+      selectedStampId: null,
+      dragOffset: { x: 0, y: 0 },
+      lastGeneratedBlob: null
+    };
+
+    const COLOR_PALETTE = [
+      { name: '黒', hex: '#000000' },
+      { name: '白', hex: '#FFFFFF' },
+      { name: '赤', hex: '#EF4444' },
+      { name: '青', hex: '#3B82F6' },
+      { name: '黄', hex: '#FFFF00' },
+      { name: '紫', hex: '#FF00FF' },
+      { name: '緑', hex: '#047857' },
+      { name: 'ピンク', hex: '#EC4899' },
+      { name: '水色', hex: '#06B6D4' },
+      { name: 'オレンジ', hex: '#F97316' }
+    ];
+
+    const video = document.getElementById('webcam');
+    const photoCanvas = document.getElementById('photo-canvas');
+    const drawCanvas = document.getElementById('draw-canvas');
+    const photoCtx = photoCanvas.getContext('2d');
+    const drawCtx = drawCanvas.getContext('2d');
+    const stampLayer = document.getElementById('stamp-layer');
+
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initDateAndID();
+      initCamera();
+      initColorPaletteUI();
+      setupEventListeners();
+    });
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast-notification');
+      document.getElementById('toast-message').innerText = msg;
+      toast.classList.remove('opacity-0', '-translate-y-4');
+      toast.classList.add('opacity-100', 'translate-y-0');
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', '-translate-y-4');
+      }, 2500);
+    }
+
+    function closeAllModals() {
+      document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.add('hidden'));
+    }
+
+    function initDateAndID() {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      state.currentDateStr = `${yyyy}.${mm}.${dd}`;
+      
+      state.currentPhotoID = 'ID:' + Math.floor(1000 + Math.random() * 9000);
+
+      document.getElementById('frame-date').innerText = state.currentDateStr;
+      document.getElementById('frame-id').innerText = state.currentPhotoID;
+      document.getElementById('confirm-date').innerText = state.currentDateStr;
+      document.getElementById('confirm-id').innerText = state.currentPhotoID;
+    }
+
+    let mediaStream = null;
+    async function initCamera() {
+      const errorOverlay = document.getElementById('camera-error-overlay');
+      const errorMsg = document.getElementById('camera-error-msg');
+      errorOverlay.classList.add('hidden');
+
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+      }
+
+      state.flashOn = false;
+      updateFlashIconUI();
+      updateCameraLabelUI();
+
+      // navigator.mediaDevices サポートチェック
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        errorMsg.innerHTML = "お使いのブラウザ・環境はWebカメラに対応していないか、<br><span class='text-pink-400 font-bold'>https://</span> 接続されていません。";
+        errorOverlay.classList.remove('hidden');
+        return;
+      }
+
+      // 段階的フォールバック（さまざまな端末やPCカメラに対応）
+      const constraintCandidates = [
+        // 優先度1: 指定 facingMode + 画面解像度
+        { video: { facingMode: { exact: state.currentFacingMode }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false },
+        // 優先度2: ソフト指定 facingMode
+        { video: { facingMode: state.currentFacingMode, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false },
+        // 優先度3: 任意のビデオ入力 (PC・1つのWebカメラ環境)
+        { video: true, audio: false }
+      ];
+
+      let streamObtained = false;
+      for (const constraints of constraintCandidates) {
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+          streamObtained = true;
+          break;
+        } catch (err) {
+          console.warn("カメラ試行失敗:", constraints, err);
+        }
+      }
+
+      if (!streamObtained || !mediaStream) {
+        errorMsg.innerHTML = "カメラを起動できませんでした。<br>1. ブラウザのカメラ許可設定を確認<br>2. LINE/Instagram等からは標準ブラウザ(Safari/Chrome)で開く";
+        errorOverlay.classList.remove('hidden');
+        return;
+      }
+
+      video.srcObject = mediaStream;
+      await video.play().catch(e => {
+        console.error("Video Play Error:", e);
+        errorMsg.innerText = "ビデオの再生に失敗しました。画面を再読み込みしてください。";
+        errorOverlay.classList.remove('hidden');
+      });
+    }
+
+    function updateCameraLabelUI() {
+      const label = document.getElementById('label-camera-mode');
+      if (state.currentFacingMode === 'user') {
+        label.innerText = 'イン📷';
+        video.classList.add('mirror-mode');
+      } else {
+        label.innerText = 'アウト📷';
+        video.classList.remove('mirror-mode');
+      }
+    }
+
+    function updateFlashIconUI() {
+      const icon = document.getElementById('icon-flash');
+      const label = document.getElementById('label-flash');
+      if (state.flashOn) {
+        icon.setAttribute('data-lucide', 'zap');
+        icon.className = 'w-4 h-4 text-amber-400';
+        label.innerText = 'ライトON';
+      } else {
+        icon.setAttribute('data-lucide', 'zap-off');
+        icon.className = 'w-4 h-4 text-gray-400';
+        label.innerText = 'ライトOFF';
+      }
+      lucide.createIcons();
+    }
+
+    function initColorPaletteUI() {
+      const grid = document.getElementById('color-palette-grid');
+      grid.innerHTML = '';
+      COLOR_PALETTE.forEach(c => {
+        const btn = document.createElement('button');
+        btn.className = 'flex flex-col items-center justify-center p-2 rounded-2xl bg-gray-700 hover:bg-gray-600 transition active:scale-95';
+        btn.innerHTML = `
+          <div class="w-8 h-8 rounded-full border-2 border-white shadow mb-1" style="background-color: ${c.hex}"></div>
+          <span class="text-xs text-gray-200 font-medium">${c.name}</span>
+        `;
+        btn.onclick = () => {
+          state.currentColor = c.hex;
+          state.currentMode = 'pen';
+          document.getElementById('current-color-indicator').style.backgroundColor = c.hex;
+          closeAllModals();
+        };
+        grid.appendChild(btn);
+      });
+      document.getElementById('current-color-indicator').style.backgroundColor = state.currentColor;
+    }
+
+    function setupEventListeners() {
+      document.getElementById('btn-retry-camera').onclick = () => {
+        initCamera();
+      };
+
+      document.getElementById('btn-switch-camera').onclick = () => {
+        state.currentFacingMode = (state.currentFacingMode === 'user') ? 'environment' : 'user';
+        initCamera();
+      };
+
+      document.getElementById('btn-toggle-flash').onclick = async () => {
+        if (!mediaStream) return;
+        const track = mediaStream.getVideoTracks()[0];
+        if (!track) return;
+
+        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+        if (capabilities.torch) {
+          state.flashOn = !state.flashOn;
+          try {
+            await track.applyConstraints({ advanced: [{ torch: state.flashOn }] });
+            updateFlashIconUI();
+          } catch (e) {
+            console.error("Flash Error:", e);
+          }
+        } else {
+          state.flashOn = !state.flashOn;
+          updateFlashIconUI();
+        }
+      };
+
+      document.getElementById('btn-toggle-stabilizer').onclick = () => {
+        state.stabilizerOn = !state.stabilizerOn;
+        const icon = document.getElementById('icon-stabilizer');
+        icon.className = state.stabilizerOn ? 'w-4 h-4 text-emerald-400' : 'w-4 h-4 text-gray-400';
+      };
+
+      document.getElementById('btn-timer-menu').onclick = () => {
+        document.getElementById('modal-timer').classList.remove('hidden');
+      };
+
+      document.querySelectorAll('.btn-select-timer').forEach(btn => {
+        btn.onclick = (e) => {
+          state.timerSec = parseInt(e.currentTarget.dataset.value);
+          document.getElementById('label-timer').innerText = state.timerSec === 0 ? 'オフ' : `${state.timerSec}秒`;
+          closeAllModals();
+        };
+      });
+
+      document.getElementById('btn-shutter').onclick = takePhoto;
+
+      document.getElementById('btn-save-and-draw').onclick = () => {
+        saveImageLocally(state.currentPhotoData, `Cheki_${state.currentPhotoID}_Original.png`);
+        goToDrawScreen();
+      };
+      document.getElementById('btn-nosave-and-draw').onclick = () => {
+        goToDrawScreen();
+      };
+      document.getElementById('btn-retake').onclick = () => {
+        document.getElementById('photo-confirm-screen').classList.add('hidden');
+        document.getElementById('camera-screen').classList.remove('hidden');
+      };
+
+      // モーダルオープン
+      document.getElementById('btn-open-color').onclick = () => document.getElementById('modal-color').classList.remove('hidden');
+      document.getElementById('btn-open-pen').onclick = () => document.getElementById('modal-pen').classList.remove('hidden');
+      document.getElementById('btn-open-eraser').onclick = () => document.getElementById('modal-eraser').classList.remove('hidden');
+      document.getElementById('btn-open-stamp').onclick = () => document.getElementById('modal-stamp').classList.remove('hidden');
+
+      // 描画関連ボタン
+      document.getElementById('btn-draw-complete').onclick = goToDecoPreviewScreen;
+      document.getElementById('btn-confirm-and-qr').onclick = generateUltraCompressedQR;
+      document.getElementById('btn-back-to-edit').onclick = () => {
+        document.getElementById('deco-preview-screen').classList.add('hidden');
+        document.getElementById('draw-screen').classList.remove('hidden');
+      };
+      document.getElementById('btn-cancel-stamp-mode').onclick = cancelStampPlacementMode;
+
+      // モーダル閉じる
+      document.querySelectorAll('.btn-close-modal').forEach(btn => {
+        btn.onclick = closeAllModals;
+      });
+
+      // ペン選択
+      document.querySelectorAll('.btn-select-pen').forEach(btn => {
+        btn.onclick = (e) => {
+          state.penLineWidth = parseInt(e.currentTarget.dataset.size);
+          state.penSizeLabel = e.currentTarget.dataset.label;
+          state.currentMode = 'pen';
+          cancelStampPlacementMode();
+          document.getElementById('badge-pen-size').innerText = state.penSizeLabel;
+          closeAllModals();
+        };
+      });
+
+      // 消しゴム選択
+      document.querySelectorAll('.btn-select-eraser').forEach(btn => {
+        btn.onclick = (e) => {
+          state.eraserLineWidth = parseInt(e.currentTarget.dataset.size);
+          state.eraserSizeLabel = e.currentTarget.dataset.label;
+          state.currentMode = 'eraser';
+          cancelStampPlacementMode();
+          document.getElementById('badge-eraser-size').innerText = state.eraserSizeLabel;
+          closeAllModals();
+        };
+      });
+
+      // 全消し
+      document.getElementById('btn-clear-all').onclick = () => {
+        drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+        state.stamps = [];
+        renderStamps();
+        closeAllModals();
+        showToast("キャンバスを全消去しました");
+      };
+
+      // スタンプ選択
+      document.querySelectorAll('.btn-select-stamp').forEach(btn => {
+        btn.onclick = (e) => {
+          const stampChar = e.currentTarget.dataset.stamp;
+          setStampPlacementMode(stampChar);
+          closeAllModals();
+        };
+      });
+
+      // ネイティブ共有ボタン
+      document.getElementById('btn-share-native').onclick = async () => {
+        if (!state.lastGeneratedBlob) return;
+        try {
+          const file = new File([state.lastGeneratedBlob], `Cheki_${state.currentPhotoID}.png`, { type: 'image/png' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: 'デコチェキ',
+              text: 'チェキを共有します！',
+              files: [file]
+            });
+          } else {
+            showToast("お使いの端末は直接共有に対応していません");
+          }
+        } catch (err) {
+          console.error("共有エラー:", err);
+        }
+      };
+
+      document.getElementById('btn-finish-all').onclick = () => {
+        document.getElementById('qr-screen').classList.add('hidden');
+        document.getElementById('camera-screen').classList.remove('hidden');
+        initDateAndID();
+        initCamera();
+      };
+
+      document.getElementById('btn-close-fallback').onclick = () => {
+        document.getElementById('modal-save-fallback').classList.add('hidden');
+      };
+
+      window.addEventListener('resize', resizeCanvases);
+
+      setupCanvasDrawing();
+    }
+
+    function setStampPlacementMode(char) {
+      state.pendingStampChar = char;
+      state.currentMode = 'stamp';
+      state.isDrawing = false;
+      document.getElementById('stamp-guide-text').innerText = `${char} 画面をタップして配置してください`;
+      document.getElementById('stamp-guide-banner').classList.remove('hidden');
+    }
+
+    function cancelStampPlacementMode() {
+      state.pendingStampChar = null;
+      if (state.currentMode === 'stamp') {
+        state.currentMode = 'pen';
+      }
+      document.getElementById('stamp-guide-banner').classList.add('hidden');
+    }
+
+    function takePhoto() {
+      if (state.timerSec > 0) {
+        let count = state.timerSec;
+        const countdownEl = document.getElementById('timer-countdown');
+        countdownEl.innerText = count;
+        countdownEl.classList.remove('hidden');
+        const timer = setInterval(() => {
+          count--;
+          if (count > 0) {
+            countdownEl.innerText = count;
+          } else {
+            clearInterval(timer);
+            countdownEl.classList.add('hidden');
+            captureFrame();
+          }
+        }, 1000);
+      } else {
+        captureFrame();
+      }
+    }
+
+    function captureFrame() {
+      const rawTempCanvas = document.createElement('canvas');
+      const videoW = video.videoWidth || 640;
+      const videoH = video.videoHeight || 480;
+      rawTempCanvas.width = videoW;
+      rawTempCanvas.height = videoH;
+      const rawCtx = rawTempCanvas.getContext('2d');
+
+      if (state.currentFacingMode === 'user') {
+        rawCtx.translate(rawTempCanvas.width, 0);
+        rawCtx.scale(-1, 1);
+      }
+      rawCtx.drawImage(video, 0, 0, rawTempCanvas.width, rawTempCanvas.height);
+
+      const frameCanvas = document.createElement('canvas');
+      frameCanvas.width = 800;
+      frameCanvas.height = 1000;
+      const fCtx = frameCanvas.getContext('2d');
+
+      fCtx.fillStyle = '#FFFFFF';
+      fCtx.fillRect(0, 0, 800, 1000);
+
+      const photoX = 24, photoY = 24, photoW = 800 - 48, photoH = 1000 - 144;
+
+      const imgRatio = videoW / videoH;
+      const targetRatio = photoW / photoH;
+      let srcX = 0, srcY = 0, srcW = videoW, srcH = videoH;
+
+      if (imgRatio > targetRatio) {
+        srcW = videoH * targetRatio;
+        srcX = (videoW - srcW) / 2;
+      } else {
+        srcH = videoW / targetRatio;
+        srcY = (videoH - srcH) / 2;
+      }
+
+      fCtx.drawImage(rawTempCanvas, srcX, srcY, srcW, srcH, photoX, photoY, photoW, photoH);
+
+      fCtx.fillStyle = '#4B5563';
+      fCtx.font = 'bold 24px monospace';
+      fCtx.textAlign = 'left';
+      fCtx.fillText(state.currentDateStr, 32, 940);
+      fCtx.textAlign = 'right';
+      fCtx.fillText(state.currentPhotoID, 768, 940);
+
+      state.currentPhotoData = frameCanvas.toDataURL('image/png');
+
+      document.getElementById('captured-preview').src = state.currentPhotoData;
+      document.getElementById('camera-screen').classList.add('hidden');
+      document.getElementById('photo-confirm-screen').classList.remove('hidden');
+    }
+
+    function resizeCanvases() {
+      const container = document.getElementById('canvas-container');
+      const rect = container.getBoundingClientRect();
+
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const targetRatio = 800 / 1000;
+      const containerRatio = rect.width / rect.height;
+
+      let canvasW, canvasH;
+      if (containerRatio > targetRatio) {
+        canvasH = rect.height;
+        canvasW = rect.height * targetRatio;
+      } else {
+        canvasW = rect.width;
+        canvasH = rect.width / targetRatio;
+      }
+
+      photoCanvas.style.width = canvasW + 'px';
+      photoCanvas.style.height = canvasH + 'px';
+      drawCanvas.style.width = canvasW + 'px';
+      drawCanvas.style.height = canvasH + 'px';
+      stampLayer.style.width = canvasW + 'px';
+      stampLayer.style.height = canvasH + 'px';
+
+      photoCanvas.width = canvasW;
+      photoCanvas.height = canvasH;
+      drawCanvas.width = canvasW;
+      drawCanvas.height = canvasH;
+
+      if (state.currentPhotoData) {
+        const img = new Image();
+        img.onload = () => {
+          photoCtx.clearRect(0, 0, photoCanvas.width, photoCanvas.height);
+          photoCtx.drawImage(img, 0, 0, photoCanvas.width, photoCanvas.height);
+        };
+        img.src = state.currentPhotoData;
+      }
+    }
+
+    function goToDrawScreen() {
+      document.getElementById('photo-confirm-screen').classList.add('hidden');
+      document.getElementById('draw-screen').classList.remove('hidden');
+
+      state.stamps = [];
+      state.selectedStampId = null;
+      cancelStampPlacementMode();
+      renderStamps();
+
+      requestAnimationFrame(() => {
+        setTimeout(resizeCanvases, 50);
+      });
+    }
+
+    function goToDecoPreviewScreen() {
+      const mergedDataUrl = generateMergedHighResDataURL();
+      document.getElementById('deco-preview-image').src = mergedDataUrl;
+
+      document.getElementById('draw-screen').classList.add('hidden');
+      document.getElementById('deco-preview-screen').classList.remove('hidden');
+    }
+
+    function setupCanvasDrawing() {
+      function getPos(e) {
+        const rect = drawCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+          x: clientX - rect.left,
+          y: clientY - rect.top
+        };
+      }
+
+      function startDraw(e) {
+        const pos = getPos(e);
+
+        if (state.pendingStampChar) {
+          addStampAt(state.pendingStampChar, pos.x, pos.y);
+          cancelStampPlacementMode();
+          state.isDrawing = false;
+          return;
+        }
+
+        if (state.currentMode === 'stamp') {
+          state.isDrawing = false;
+          return;
+        }
+
+        if (state.selectedStampId) {
+          state.selectedStampId = null;
+          renderStamps();
+        }
+
+        state.isDrawing = true;
+        drawCtx.beginPath();
+        drawCtx.moveTo(pos.x, pos.y);
+
+        if (state.currentMode === 'eraser') {
+          drawCtx.globalCompositeOperation = 'destination-out';
+          drawCtx.lineWidth = state.eraserLineWidth;
+        } else {
+          drawCtx.globalCompositeOperation = 'source-over';
+          drawCtx.strokeStyle = state.currentColor;
+          drawCtx.lineWidth = state.penLineWidth;
+          drawCtx.lineCap = 'round';
+          drawCtx.lineJoin = 'round';
+        }
+      }
+
+      function moveDraw(e) {
+        if (!state.isDrawing || state.currentMode === 'stamp' || state.pendingStampChar) return;
+        const pos = getPos(e);
+        drawCtx.lineTo(pos.x, pos.y);
+        drawCtx.stroke();
+      }
+
+      function stopDraw() {
+        if (state.isDrawing) {
+          drawCtx.closePath();
+          state.isDrawing = false;
+        }
+      }
+
+      drawCanvas.addEventListener('mousedown', startDraw);
+      drawCanvas.addEventListener('mousemove', moveDraw);
+      drawCanvas.addEventListener('mouseup', stopDraw);
+
+      drawCanvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        startDraw(e);
+      }, { passive: false });
+
+      drawCanvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        moveDraw(e);
+      }, { passive: false });
+
+      drawCanvas.addEventListener('touchend', stopDraw);
+    }
+
+    function addStampAt(char, x, y) {
+      const stamp = {
+        id: 'stamp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+        char: char,
+        x: x,
+        y: y
+      };
+      state.stamps.push(stamp);
+      state.selectedStampId = stamp.id;
+      renderStamps();
+    }
+
+    function renderStamps() {
+      stampLayer.innerHTML = '';
+      state.stamps.forEach(s => {
+        const el = document.createElement('div');
+        el.className = 'stamp-element' + (state.selectedStampId === s.id ? ' selected' : '');
+        el.style.left = s.x + 'px';
+        el.style.top = s.y + 'px';
+        el.innerText = s.char;
+
+        if (state.selectedStampId === s.id) {
+          const delBtn = document.createElement('div');
+          delBtn.className = 'stamp-delete-btn';
+          delBtn.innerText = '✕';
+          delBtn.onmousedown = (e) => { e.stopPropagation(); deleteStamp(s.id); };
+          delBtn.ontouchstart = (e) => { e.stopPropagation(); deleteStamp(s.id); };
+          el.appendChild(delBtn);
+        }
+
+        const startDrag = (e) => {
+          e.stopPropagation();
+          state.selectedStampId = s.id;
+          state.activeDragStampId = s.id;
+          const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+          const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+          state.dragOffset = {
+            x: clientX - s.x,
+            y: clientY - s.y
+          };
+          renderStamps();
+        };
+
+        el.onmousedown = startDrag;
+        el.ontouchstart = startDrag;
+
+        stampLayer.appendChild(el);
+      });
+    }
+
+    function deleteStamp(id) {
+      state.stamps = state.stamps.filter(s => s.id !== id);
+      if (state.selectedStampId === id) state.selectedStampId = null;
+      renderStamps();
+    }
+
+    function onGlobalMove(e) {
+      if (!state.activeDragStampId) return;
+      if (e.cancelable) e.preventDefault();
+
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+      const stamp = state.stamps.find(s => s.id === state.activeDragStampId);
+      if (stamp) {
+        stamp.x = clientX - state.dragOffset.x;
+        stamp.y = clientY - state.dragOffset.y;
+        renderStamps();
+      }
+    }
+
+    function onGlobalEnd() {
+      state.activeDragStampId = null;
+    }
+
+    window.addEventListener('mousemove', onGlobalMove);
+    window.addEventListener('mouseup', onGlobalEnd);
+    window.addEventListener('touchmove', onGlobalMove, { passive: false });
+    window.addEventListener('touchend', onGlobalEnd);
+
+    function generateMergedHighResDataURL() {
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = 800;
+      exportCanvas.height = 1000;
+      const ctx = exportCanvas.getContext('2d');
+
+      ctx.drawImage(photoCanvas, 0, 0, 800, 1000);
+      ctx.drawImage(drawCanvas, 0, 0, 800, 1000);
+
+      const rect = drawCanvas.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        const scaleX = 800 / rect.width;
+        const scaleY = 1000 / rect.height;
+
+        ctx.font = '55px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        state.stamps.forEach(s => {
+          ctx.fillText(s.char, s.x * scaleX, s.y * scaleY);
+        });
+      }
+
+      return exportCanvas.toDataURL('image/png');
+    }
+
+    async function generateUltraCompressedQR() {
+      const highResDataURL = generateMergedHighResDataURL();
+      document.getElementById('final-compressed-preview').src = highResDataURL;
+
+      document.getElementById('deco-preview-screen').classList.add('hidden');
+      document.getElementById('qr-screen').classList.remove('hidden');
+
+      const qrLoading = document.getElementById('qr-loading');
+      const qrContainer = document.getElementById('qrcode-container');
+      const qrSizeLabel = document.getElementById('qr-data-size');
+
+      qrLoading.classList.remove('hidden');
+      qrContainer.classList.add('hidden');
+      qrContainer.innerHTML = '';
+      qrSizeLabel.innerText = '画像を準備中...';
+
+      try {
+        const arr = highResDataURL.split(',');
+        const mime = arr[0].match(/:(.*?);/)[1];
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        const blob = new Blob([u8arr], { type: mime });
+        state.lastGeneratedBlob = blob;
+
+        const formData = new FormData();
+        formData.append('file', blob, `cheki_${state.currentPhotoID}.png`);
+
+        const response = await fetch('https://tmpfiles.org/api/v1/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) throw new Error('Upload failed');
+        const result = await response.json();
+
+        let pageUrl = result.data.url;
+        let directUrl = pageUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+
+        new QRCode(qrContainer, {
+          text: directUrl,
+          width: 180,
+          height: 180,
+          correctLevel: QRCode.CorrectLevel.M
+        });
+
+        qrLoading.classList.add('hidden');
+        qrContainer.classList.remove('hidden');
+        qrSizeLabel.innerText = 'QRコードの読み取り準備完了！';
+
+      } catch (err) {
+        console.error('QR生成/アップロード失敗:', err);
+        qrLoading.classList.add('hidden');
+        qrContainer.classList.remove('hidden');
+        qrContainer.innerHTML = '<p class="text-xs text-pink-500 font-bold p-2 text-center">画像共有機能をご利用ください</p>';
+        qrSizeLabel.innerText = '「共有機能で送る」ボタンをご利用いただけます';
+      }
+    }
+
+    function saveImageLocally(dataUrl, filename) {
+      let saved = false;
+
+      try {
+        const arr = dataUrl.split(',');
+        const mime = arr[0].match(/:(.*?);/)[1];
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        const blob = new Blob([u8arr], { type: mime });
+        const blobUrl = URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        showToast("画像を保存しました");
+        saved = true;
+      } catch (e) {
+        console.error("Blob保存不可、ダイアログ表示へ切り替え:", e);
+      }
+
+      if (!saved) {
+        document.getElementById('fallback-save-img').src = dataUrl;
+        document.getElementById('modal-save-fallback').classList.remove('hidden');
+        showToast("長押しして保存してください");
+      }
+    }
+  </script>
+</body>
+</html>

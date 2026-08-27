@@ -275,8 +275,8 @@
   <!-- ==================== 5. 超圧縮＆QR表示画面 ==================== -->
   <div id="qr-screen" class="hidden absolute inset-0 bg-gray-950 z-50 flex flex-col justify-between p-4 overflow-y-auto">
     <div class="text-center py-2">
-      <h2 class="text-xl font-bold text-pink-400">デコチェキ共有用QR完成！</h2>
-      <p class="text-xs text-gray-400 mt-1">ファンのスマホのカメラでQRコードを読み取ってください</p>
+      <h2 class="text-xl font-bold text-pink-400">デコチェキ共有＆ Quick Share</h2>
+      <p class="text-xs text-gray-400 mt-1">QRコード読み取り、または Quick Share (近距離共有) で送信できます</p>
     </div>
 
     <div class="flex-1 flex flex-col items-center justify-center gap-4 my-2">
@@ -295,10 +295,10 @@
     </div>
 
     <div class="flex flex-col gap-2.5 w-full max-w-sm mx-auto pb-4">
-      <button id="btn-share-native" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition text-center text-sm flex items-center justify-center gap-2">
-        <i data-lucide="share-2" class="w-4 h-4"></i> スマホの共有機能で送る
+      <button id="btn-share-native" class="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition text-center text-sm flex items-center justify-center gap-2">
+        <i data-lucide="share-2" class="w-5 h-5"></i> Quick Share / 端末共有で送る
       </button>
-      <button id="btn-finish-all" class="w-full py-3.5 bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition text-center text-base">
+      <button id="btn-finish-all" class="w-full py-3 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold rounded-2xl shadow-lg active:scale-95 transition text-center text-sm">
         撮影画面に戻る
       </button>
     </div>
@@ -901,6 +901,12 @@
       }
 
       function startDraw(e) {
+        // スタンプ移動中やスタンプ配置モード時は描画を開始しない
+        if (state.activeDragStampId) {
+          state.isDrawing = false;
+          return;
+        }
+
         const pos = getPos(e);
 
         if (state.pendingStampChar) {
@@ -937,7 +943,7 @@
       }
 
       function moveDraw(e) {
-        if (!state.isDrawing || state.currentMode === 'stamp' || state.pendingStampChar) return;
+        if (!state.isDrawing || state.currentMode === 'stamp' || state.pendingStampChar || state.activeDragStampId) return;
         const pos = getPos(e);
         drawCtx.lineTo(pos.x, pos.y);
         drawCtx.stroke();
@@ -955,11 +961,13 @@
       drawCanvas.addEventListener('mouseup', stopDraw);
 
       drawCanvas.addEventListener('touchstart', (e) => {
+        if (state.activeDragStampId) return;
         e.preventDefault();
         startDraw(e);
       }, { passive: false });
 
       drawCanvas.addEventListener('touchmove', (e) => {
+        if (state.activeDragStampId) return;
         e.preventDefault();
         moveDraw(e);
       }, { passive: false });
@@ -999,6 +1007,7 @@
 
         const startDrag = (e) => {
           e.stopPropagation();
+          state.isDrawing = false; // ドラッグ開始時にペン描画を確実にオフにする
           state.selectedStampId = s.id;
           state.activeDragStampId = s.id;
           const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -1040,6 +1049,7 @@
 
     function onGlobalEnd() {
       state.activeDragStampId = null;
+      state.isDrawing = false;
     }
 
     window.addEventListener('mousemove', onGlobalMove);

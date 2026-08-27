@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -113,13 +112,19 @@
     <span id="toast-message">メッセージ</span>
   </div>
 
-  <!-- 最上部モード切替タブナビゲーション -->
-  <div class="bg-gray-900 border-b border-gray-800 p-2 flex justify-center gap-2 z-40">
-    <button id="tab-btn-camera" class="flex-1 max-w-[160px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-pink-600 text-white shadow">
-      <i data-lucide="camera" class="w-4 h-4"></i> 📷 撮影・デコ
-    </button>
-    <button id="tab-btn-album" class="flex-1 max-w-[160px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-gray-800 text-gray-300 hover:bg-gray-700">
-      <i data-lucide="image" class="w-4 h-4"></i> 📂 アルバム
+  <!-- 最上部モード切替タブ ＆ 設定ボタン -->
+  <div class="bg-gray-900 border-b border-gray-800 p-2 flex justify-between items-center z-40">
+    <div class="flex gap-2 flex-1 max-w-[320px]">
+      <button id="tab-btn-camera" class="flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-pink-600 text-white shadow">
+        <i data-lucide="camera" class="w-4 h-4"></i> 📷 撮影・デコ
+      </button>
+      <button id="tab-btn-album" class="flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-gray-800 text-gray-300 hover:bg-gray-700">
+        <i data-lucide="image" class="w-4 h-4"></i> 📂 アルバム
+      </button>
+    </div>
+    <!-- 設定ボタン -->
+    <button id="btn-open-settings" class="p-2 bg-gray-800 hover:bg-gray-700 rounded-xl text-pink-400 active:scale-95 transition flex items-center gap-1 text-xs font-bold border border-gray-700 ml-2">
+      <i data-lucide="settings" class="w-4 h-4"></i> 設定
     </button>
   </div>
 
@@ -153,9 +158,13 @@
             3
           </div>
         </div>
-        <div class="absolute bottom-3 left-4 right-4 flex justify-between items-center text-xs font-mono font-bold text-gray-500">
+        <!-- 下部余白のテキスト表示 (グループ・アイドル名・メンカラ情報) -->
+        <div class="absolute bottom-3 left-4 right-4 flex justify-between items-center text-[10px] font-mono font-bold text-gray-600">
+          <div class="flex items-center gap-1.5 truncate max-w-[65%]">
+            <span id="badge-idol-group" class="bg-gray-200 text-gray-800 px-1.5 py-0.5 rounded text-[9px] truncate">Group</span>
+            <span id="badge-idol-name" class="truncate font-extrabold text-gray-800">Member</span>
+          </div>
           <span id="frame-date">2026.08.27</span>
-          <span id="frame-id">ID: ----(raw)</span>
         </div>
       </div>
     </div>
@@ -259,7 +268,7 @@
   </div>
 
 
-  <!-- ==================== 5. アルバム専用閲覧モード画面 (余白極小・1枚でも2x2の1マスサイズ固定) ==================== -->
+  <!-- ==================== 5. アルバム専用閲覧モード画面 (余白極小・2x2固定) ==================== -->
   <div id="album-screen" class="hidden absolute inset-0 top-[50px] bg-gray-950 z-30 flex flex-col p-2 overflow-y-auto">
     <div class="flex justify-between items-center px-1 pb-1 border-b border-gray-800 mb-2">
       <div>
@@ -269,7 +278,7 @@
       <span id="album-count-badge" class="bg-gray-800 text-pink-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-gray-700">0枚</span>
     </div>
 
-    <!-- アルバムグリッド表示領域 (必ず2列構成でサイズを統一) -->
+    <!-- アルバムグリッド表示領域 (2列構成でサイズを統一) -->
     <div id="album-grid" class="grid grid-cols-2 gap-2 pb-4 items-start content-start">
       <div id="album-empty-msg" class="col-span-2 flex flex-col items-center justify-center py-16 text-gray-500 gap-2">
         <i data-lucide="image-off" class="w-10 h-10 text-gray-600"></i>
@@ -307,6 +316,46 @@
       <button id="btn-delete-item" class="py-2 px-3 bg-red-600/80 hover:bg-red-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1">
         <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> 削除
       </button>
+    </div>
+  </div>
+
+
+  <!-- ==================== 7. 設定モーダル（グループ名・推しメン名・メンカラ設定） ==================== -->
+  <div id="modal-settings" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-900 rounded-3xl p-5 w-full max-w-sm border border-gray-700 shadow-2xl flex flex-col max-h-[85vh]">
+      <div class="flex justify-between items-center mb-3 border-b border-gray-800 pb-2">
+        <h3 class="text-sm font-bold text-pink-400 flex items-center gap-1.5">
+          <i data-lucide="settings" class="w-4 h-4"></i> アイドル・メンカラ設定
+        </h3>
+        <button id="btn-close-settings" class="bg-gray-800 text-gray-300 rounded-full p-1 hover:bg-gray-700">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- 新規登録 / 編集フォーム -->
+      <div class="bg-gray-800/80 p-3 rounded-2xl mb-3 border border-gray-700 flex flex-col gap-2">
+        <span class="text-[11px] font-bold text-gray-300">新規追加・編集</span>
+        <input type="hidden" id="edit-target-id" value="">
+        <input type="text" id="input-group-name" placeholder="グループ名 (例: 〇〇フェス / 推しグル)" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-pink-500">
+        
+        <div class="flex gap-2">
+          <input type="text" id="input-member-name" placeholder="アイドル名 / メンバー名" class="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-pink-500">
+          
+          <div class="flex items-center gap-1 bg-gray-900 border border-gray-700 rounded-xl px-2 py-1">
+            <input type="color" id="input-member-color" value="#EC4899" class="w-7 h-7 rounded border-0 cursor-pointer bg-transparent">
+            <span class="text-[10px] text-gray-400">メンカラ</span>
+          </div>
+        </div>
+
+        <button id="btn-save-idol-setting" class="w-full py-2 bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-xl text-xs active:scale-95 transition mt-1 shadow">
+          保存する
+        </button>
+      </div>
+
+      <!-- 登録済みリスト -->
+      <div class="flex-1 overflow-y-auto flex flex-col gap-2 pr-1 min-h-[140px]" id="idol-list-container">
+        <!-- JS動的生成 -->
+      </div>
     </div>
   </div>
 
@@ -414,7 +463,11 @@
       albumItems: [],
       selectedAlbumItem: null,
       viewerMode: 'deco',
-      cardViewModes: {}
+      cardViewModes: {},
+
+      // アイドル設定データ
+      idolSettings: [],
+      selectedIdolId: null
     };
 
     const COLOR_PALETTE = [
@@ -440,11 +493,14 @@
     let db = null;
     function initIndexedDB() {
       return new Promise((resolve, reject) => {
-        const req = indexedDB.open('ChekiSnapDB', 1);
+        const req = indexedDB.open('ChekiSnapDB', 2);
         req.onupgradeneeded = (e) => {
           const database = e.target.result;
           if (!database.objectStoreNames.contains('chekis')) {
             database.createObjectStore('chekis', { keyPath: 'id' });
+          }
+          if (!database.objectStoreNames.contains('idols')) {
+            database.createObjectStore('idols', { keyPath: 'id' });
           }
         };
         req.onsuccess = (e) => {
@@ -488,6 +544,40 @@
       });
     }
 
+    // アイドル設定用DB操作
+    async function saveIdolToDB(item) {
+      if (!db) await initIndexedDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('idols', 'readwrite');
+        const store = tx.objectStore('idols');
+        store.put(item);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e);
+      });
+    }
+
+    async function getAllIdolsFromDB() {
+      if (!db) await initIndexedDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('idols', 'readonly');
+        const store = tx.objectStore('idols');
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = (e) => reject(e);
+      });
+    }
+
+    async function deleteIdolFromDB(id) {
+      if (!db) await initIndexedDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('idols', 'readwrite');
+        const store = tx.objectStore('idols');
+        store.delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e);
+      });
+    }
+
     async function generateUniquePhotoID(dateStr) {
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
       const existingChekis = await getAllChekisFromDB();
@@ -513,11 +603,49 @@
     window.addEventListener('DOMContentLoaded', async () => {
       lucide.createIcons();
       await initIndexedDB();
+      await loadIdolSettings();
       await initDateAndID();
       initCamera();
       initColorPaletteUI();
       setupEventListeners();
     });
+
+    async function loadIdolSettings() {
+      const idols = await getAllIdolsFromDB();
+      if (idols.length === 0) {
+        const defaultItem = {
+          id: 'idol_' + Date.now(),
+          groupName: '推しグループ',
+          memberName: '推しメン',
+          color: '#EC4899',
+          selected: true
+        };
+        await saveIdolToDB(defaultItem);
+        state.idolSettings = [defaultItem];
+        state.selectedIdolId = defaultItem.id;
+      } else {
+        state.idolSettings = idols;
+        const selected = idols.find(i => i.selected) || idols[0];
+        state.selectedIdolId = selected.id;
+      }
+      updateIdolBadgeUI();
+    }
+
+    function updateIdolBadgeUI() {
+      const active = state.idolSettings.find(i => i.id === state.selectedIdolId) || state.idolSettings[0];
+      const groupBadge = document.getElementById('badge-idol-group');
+      const nameBadge = document.getElementById('badge-idol-name');
+
+      if (active) {
+        groupBadge.innerText = active.groupName;
+        nameBadge.innerText = active.memberName;
+        nameBadge.style.color = active.color;
+      } else {
+        groupBadge.innerText = '未設定';
+        nameBadge.innerText = '----';
+        nameBadge.style.color = '#1f2937';
+      }
+    }
 
     async function initDateAndID() {
       const now = new Date();
@@ -529,7 +657,6 @@
       state.currentPhotoRawID = await generateUniquePhotoID(state.currentDateStr);
 
       document.getElementById('frame-date').innerText = state.currentDateStr;
-      document.getElementById('frame-id').innerText = `ID: ${state.currentPhotoRawID}(raw)`;
     }
 
     // --- カメラ制御 ---
@@ -627,6 +754,47 @@
       // タブ切替
       document.getElementById('tab-btn-camera').onclick = () => switchTab('camera');
       document.getElementById('tab-btn-album').onclick = () => switchTab('album');
+
+      // 設定モーダル開閉
+      document.getElementById('btn-open-settings').onclick = () => {
+        renderIdolSettingsUI();
+        document.getElementById('modal-settings').classList.remove('hidden');
+      };
+      document.getElementById('btn-close-settings').onclick = () => {
+        document.getElementById('modal-settings').classList.add('hidden');
+      };
+
+      // アイドル設定保存ボタン
+      document.getElementById('btn-save-idol-setting').onclick = async () => {
+        const editId = document.getElementById('edit-target-id').value;
+        const groupName = document.getElementById('input-group-name').value.trim() || 'グループ名';
+        const memberName = document.getElementById('input-member-name').value.trim() || 'メンバー名';
+        const color = document.getElementById('input-member-color').value;
+
+        const newItem = {
+          id: editId || ('idol_' + Date.now()),
+          groupName: groupName,
+          memberName: memberName,
+          color: color,
+          selected: true
+        };
+
+        state.idolSettings.forEach(i => i.selected = false);
+        await saveIdolToDB(newItem);
+        for (const i of state.idolSettings) {
+          if (i.id !== newItem.id) {
+            i.selected = false;
+            await saveIdolToDB(i);
+          }
+        }
+
+        document.getElementById('edit-target-id').value = '';
+        document.getElementById('input-group-name').value = '';
+        document.getElementById('input-member-name').value = '';
+        
+        await loadIdolSettings();
+        showToast("設定を保存しました");
+      };
 
       // カメラ切替
       document.getElementById('btn-switch-camera').onclick = () => {
@@ -816,21 +984,85 @@
       setupCanvasDrawing();
     }
 
+    function renderIdolSettingsUI() {
+      const container = document.getElementById('idol-list-container');
+      container.innerHTML = '';
+
+      if (state.idolSettings.length === 0) {
+        container.innerHTML = `<div class="text-center text-gray-500 text-xs py-4">登録がありません</div>`;
+        return;
+      }
+
+      state.idolSettings.forEach(item => {
+        const isSelected = (item.id === state.selectedIdolId);
+        const card = document.createElement('div');
+        card.className = `p-2.5 rounded-2xl flex items-center justify-between border transition ${isSelected ? 'bg-pink-950/40 border-pink-500' : 'bg-gray-800 border-gray-700'}`;
+        
+        card.innerHTML = `
+          <div class="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer select-idol">
+            <div class="w-5 h-5 rounded-full border border-white/50 flex-shrink-0 shadow" style="background-color: ${item.color}"></div>
+            <div class="flex flex-col truncate">
+              <span class="text-[10px] text-gray-400 truncate">${item.groupName}</span>
+              <span class="text-xs font-bold text-white truncate">${item.memberName}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 flex-shrink-0">
+            <button class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-lg text-[10px] font-bold text-gray-300 btn-edit-idol">編集</button>
+            <button class="p-1 bg-red-900/60 hover:bg-red-800 rounded-lg text-red-300 btn-del-idol"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+          </div>
+        `;
+
+        card.querySelector('.select-idol').onclick = async () => {
+          state.selectedIdolId = item.id;
+          for (const i of state.idolSettings) {
+            i.selected = (i.id === item.id);
+            await saveIdolToDB(i);
+          }
+          updateIdolBadgeUI();
+          renderIdolSettingsUI();
+          showToast("推しメンを切り替えました");
+        };
+
+        card.querySelector('.btn-edit-idol').onclick = () => {
+          document.getElementById('edit-target-id').value = item.id;
+          document.getElementById('input-group-name').value = item.groupName;
+          document.getElementById('input-member-name').value = item.memberName;
+          document.getElementById('input-member-color').value = item.color;
+        };
+
+        card.querySelector('.btn-del-idol').onclick = async () => {
+          if (state.idolSettings.length <= 1) {
+            alert("少なくとも1件の設定が必要です。");
+            return;
+          }
+          if (confirm("この設定を削除しますか？")) {
+            await deleteIdolFromDB(item.id);
+            await loadIdolSettings();
+            renderIdolSettingsUI();
+            showToast("削除しました");
+          }
+        };
+
+        container.appendChild(card);
+      });
+      lucide.createIcons();
+    }
+
     function switchTab(tab) {
       state.currentActiveTab = tab;
       const cameraBtn = document.getElementById('tab-btn-camera');
       const albumBtn = document.getElementById('tab-btn-album');
 
       if (tab === 'camera') {
-        cameraBtn.className = "flex-1 max-w-[160px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-pink-600 text-white shadow";
-        albumBtn.className = "flex-1 max-w-[160px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-gray-800 text-gray-300 hover:bg-gray-700";
+        cameraBtn.className = "flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-pink-600 text-white shadow";
+        albumBtn.className = "flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-gray-800 text-gray-300 hover:bg-gray-700";
 
         document.getElementById('album-screen').classList.add('hidden');
         document.getElementById('camera-screen').classList.remove('hidden');
         initCamera();
       } else {
-        albumBtn.className = "flex-1 max-w-[160px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-pink-600 text-white shadow";
-        cameraBtn.className = "flex-1 max-w-[160px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-gray-800 text-gray-300 hover:bg-gray-700";
+        albumBtn.className = "flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-pink-600 text-white shadow";
+        cameraBtn.className = "flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-gray-800 text-gray-300 hover:bg-gray-700";
 
         document.getElementById('camera-screen').classList.add('hidden');
         document.getElementById('photo-confirm-screen').classList.add('hidden');
@@ -842,7 +1074,6 @@
       }
     }
 
-    // アルバム一覧（枚数にかかわらず1枚のマス目を2x2サイズに完全固定）
     async function loadAlbumGrid() {
       const items = await getAllChekisFromDB();
       state.albumItems = items.sort((a, b) => b.createdAt - a.createdAt);
@@ -869,18 +1100,15 @@
         card.className = "bg-white text-gray-900 rounded-lg p-1 shadow flex flex-col justify-between relative border border-gray-200 w-full";
         
         card.innerHTML = `
-          <!-- サムネイル切替タブ -->
           <div class="flex justify-between items-center mb-1 bg-gray-100 p-0.5 rounded border border-gray-200 z-10">
             <button class="btn-card-mode flex-1 py-0.5 text-[8px] font-bold rounded ${currentCardMode === 'deco' ? 'bg-pink-600 text-white shadow' : 'text-gray-600'}" data-id="${item.id}" data-mode="deco">デコ</button>
             <button class="btn-card-mode flex-1 py-0.5 text-[8px] font-bold rounded ${currentCardMode === 'original' ? 'bg-pink-600 text-white shadow' : 'text-gray-600'}" data-id="${item.id}" data-mode="original">原本</button>
           </div>
 
-          <!-- 画像サムネイル -->
           <div class="btn-open-detail relative w-full pb-[125%] bg-black rounded overflow-hidden cursor-pointer active:scale-95 transition">
             <img src="${displayUrl}" class="absolute inset-0 w-full h-full object-cover" />
           </div>
 
-          <!-- カード下部情報 -->
           <div class="btn-open-detail flex justify-between items-center text-[8px] font-mono font-bold text-gray-600 px-0.5 mt-1 cursor-pointer">
             <span>${item.dateStr}</span>
             <span class="text-pink-600 font-extrabold">${item.photoId}(${tagLabel})</span>
@@ -934,7 +1162,7 @@
     }
 
     function closeAllModals() {
-      document.querySelectorAll('#modal-timer, #modal-color, #modal-pen, #modal-eraser, #modal-stamp').forEach(m => m.classList.add('hidden'));
+      document.querySelectorAll('#modal-timer, #modal-color, #modal-pen, #modal-eraser, #modal-stamp, #modal-settings').forEach(m => m.classList.add('hidden'));
     }
 
     function showToast(msg) {
@@ -948,17 +1176,15 @@
       }, 2500);
     }
 
-    // スタンプ配置モード設定
     function setStampPlacementMode(char) {
       state.pendingStampChar = char;
       document.getElementById('stamp-guide-text').innerText = `${char} 配置場所をタップ (配置後ペンタップで解除)`;
       document.getElementById('stamp-guide-banner').classList.remove('hidden');
     }
 
-    // スタンプ配置完了後の自動解除処理（描画モードをnullにし、ペン選択まで描画不能にする）
     function finishStampPlacement() {
       state.pendingStampChar = null;
-      state.currentMode = null; // ペン先の復帰を防ぐ（描き込み不可）
+      state.currentMode = null; 
       document.getElementById('stamp-guide-text').innerText = `スタンプ配置完了 (ペンまたは消しゴムを選択してください)`;
       document.getElementById('stamp-guide-banner').classList.remove('hidden');
     }
@@ -1027,12 +1253,24 @@
 
       fCtx.drawImage(rawTempCanvas, srcX, srcY, srcW, srcH, photoX, photoY, photoW, photoH);
 
-      fCtx.fillStyle = '#4B5563';
-      fCtx.font = 'bold 24px monospace';
+      // フレーム下部にグループ名・推しメン名（メンカラ色）・日付を描画
+      const activeIdol = state.idolSettings.find(i => i.id === state.selectedIdolId) || state.idolSettings[0];
+      const groupTxt = activeIdol ? activeIdol.groupName : '';
+      const memberTxt = activeIdol ? activeIdol.memberName : '';
+      const memberColor = activeIdol ? activeIdol.color : '#1f2937';
+
+      fCtx.font = 'bold 22px monospace';
       fCtx.textAlign = 'left';
-      fCtx.fillText(state.currentDateStr, 32, 940);
+      fCtx.fillStyle = '#4B5563';
+      fCtx.fillText(`${groupTxt} / `, 32, 940);
+      
+      const groupWidth = fCtx.measureText(`${groupTxt} / `).width;
+      fCtx.fillStyle = memberColor;
+      fCtx.fillText(memberTxt, 32 + groupWidth, 940);
+
+      fCtx.fillStyle = '#4B5563';
       fCtx.textAlign = 'right';
-      fCtx.fillText(`ID: ${state.currentPhotoRawID}(raw)`, 768, 940);
+      fCtx.fillText(state.currentDateStr, 768, 940);
 
       state.currentPhotoData = frameCanvas.toDataURL('image/png');
 
@@ -1087,7 +1325,7 @@
 
       state.stamps = [];
       state.selectedStampId = null;
-      state.currentMode = 'pen'; // 初期状態はペン
+      state.currentMode = 'pen';
       cancelStampPlacementMode();
       renderStamps();
 
@@ -1118,15 +1356,13 @@
       function startDraw(e) {
         if (state.activeDragStampId) return;
 
-        // スタンプ配置待ちモード時
         if (state.pendingStampChar) {
           const pos = getPos(e);
           addStampAt(state.pendingStampChar, pos.x, pos.y);
-          finishStampPlacement(); // 配置完了・モードをnullにセットしてペン先非復帰
+          finishStampPlacement();
           return;
         }
 
-        // ペン/消しゴムモードがアクティブでない（スタンプ自動解除後のペン未タップ時など）場合は描画不可
         if (!state.currentMode) return;
 
         const pos = getPos(e);
@@ -1357,4 +1593,3 @@
   </script>
 </body>
 </html>
-```

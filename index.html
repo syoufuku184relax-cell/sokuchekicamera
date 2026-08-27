@@ -1,1595 +1,1297 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>即デコカメラ - ChekiSnap</title>
-  <!-- Tailwind CSS (CDN) -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <style>
-    /* ブラウザ全体のスクロール・誤拡大防止 */
-    html, body {
-      touch-action: none;
-      user-select: none;
-      -webkit-user-select: none;
-      overflow: hidden;
-      background-color: #090d16;
-      color: white;
-      height: 100%;
-      width: 100%;
-      position: fixed;
-    }
-
-    /* チェキフレーム構造 */
-    .cheki-frame {
-      background: white;
-      color: #1f2937;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
-      border-radius: 8px;
-      display: flex;
-      flex-direction: column;
-      position: relative;
-      padding: 12px 12px 48px 12px;
-    }
-    .cheki-photo-area {
-      position: relative;
-      width: 100%;
-      height: 0;
-      padding-bottom: 125%; /* 4:5 比率 */
-      background: #000;
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    .cheki-photo-content {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    /* インカメラ鏡像反転 */
-    .mirror-mode {
-      transform: scaleX(-1);
-    }
-
-    /* スタンプ要素スタイル */
-    .stamp-element {
-      position: absolute;
-      font-size: 2.8rem;
-      cursor: move;
-      touch-action: none;
-      transform: translate(-50%, -50%);
-      line-height: 1;
-      filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.4));
-      user-select: none;
-      pointer-events: auto;
-      z-index: 30;
-    }
-    .stamp-element.selected {
-      outline: 2px dashed #ec4899;
-      outline-offset: 4px;
-      border-radius: 8px;
-      background-color: rgba(236, 72, 153, 0.2);
-    }
-    .stamp-delete-btn {
-      position: absolute;
-      top: -12px;
-      right: -12px;
-      width: 24px;
-      height: 24px;
-      background-color: #ef4444;
-      color: white;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      font-weight: bold;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.4);
-      cursor: pointer;
-      z-index: 40;
-    }
-
-    .modal-backdrop {
-      background-color: rgba(0, 0, 0, 0.75);
-      backdrop-filter: blur(4px);
-    }
-
-    #toast-notification {
-      transition: opacity 0.3s ease, transform 0.3s ease;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ChekiSnap</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap');
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+            position: fixed;
+            inset: 0;
+        }
+        .stamp-item {
+            cursor: grab;
+            transition: transform 0.1s;
+        }
+        .stamp-item:active {
+            cursor: grabbing;
+        }
+        .animate-pop {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .shutter-flash {
+            position: fixed;
+            inset: 0;
+            background: white;
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease-out;
+        }
+        .shutter-flash.active {
+            opacity: 1;
+        }
+    </style>
 </head>
-<body class="h-full w-full flex flex-col justify-between font-sans">
+<body class="h-full w-full flex flex-col justify-between max-w-md mx-auto relative bg-slate-900 border-x border-slate-800">
 
-  <!-- トースト通知 -->
-  <div id="toast-notification" class="pointer-events-none opacity-0 -translate-y-4 fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-5 py-2.5 rounded-full font-bold shadow-2xl flex items-center gap-2 text-sm border border-emerald-400">
-    <i data-lucide="check-circle" class="w-5 h-5"></i>
-    <span id="toast-message">メッセージ</span>
-  </div>
+    <!-- シャッターフラッシュ効果 -->
+    <div id="shutter-flash" class="shutter-flash"></div>
 
-  <!-- 最上部モード切替タブ ＆ 設定ボタン -->
-  <div class="bg-gray-900 border-b border-gray-800 p-2 flex justify-between items-center z-40">
-    <div class="flex gap-2 flex-1 max-w-[320px]">
-      <button id="tab-btn-camera" class="flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-pink-600 text-white shadow">
-        <i data-lucide="camera" class="w-4 h-4"></i> 📷 撮影・デコ
-      </button>
-      <button id="tab-btn-album" class="flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-gray-800 text-gray-300 hover:bg-gray-700">
-        <i data-lucide="image" class="w-4 h-4"></i> 📂 アルバム
-      </button>
-    </div>
-    <!-- 設定ボタン -->
-    <button id="btn-open-settings" class="p-2 bg-gray-800 hover:bg-gray-700 rounded-xl text-pink-400 active:scale-95 transition flex items-center gap-1 text-xs font-bold border border-gray-700 ml-2">
-      <i data-lucide="settings" class="w-4 h-4"></i> 設定
-    </button>
-  </div>
-
-
-  <!-- ==================== 1. 撮影モード・メイン画面 ==================== -->
-  <div id="camera-screen" class="relative flex-1 w-full flex flex-col justify-between p-2 overflow-hidden">
-    <!-- カメラコントロール用サブツールバー -->
-    <div class="flex justify-between items-center z-10 p-2 bg-gray-900/80 rounded-2xl backdrop-blur-md border border-gray-800">
-      <button id="btn-switch-camera" class="flex items-center gap-1.5 px-3 py-1.5 bg-pink-600 hover:bg-pink-500 rounded-xl active:scale-95 transition text-xs font-bold shadow">
-        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-        <span id="label-camera-mode">イン📷</span>
-      </button>
-
-      <button id="btn-toggle-flash" class="flex items-center gap-1 px-3 py-1.5 bg-gray-800 rounded-xl active:scale-95 transition text-xs">
-        <i data-lucide="zap-off" id="icon-flash" class="w-3.5 h-3.5 text-gray-400"></i>
-        <span id="label-flash">OFF</span>
-      </button>
-
-      <button id="btn-timer-menu" class="flex items-center gap-1 px-3 py-1.5 bg-gray-800 rounded-xl text-xs active:scale-95 transition">
-        <i data-lucide="timer" class="w-3.5 h-3.5 text-amber-400"></i>
-        <span id="label-timer">オフ</span>
-      </button>
-    </div>
-
-    <!-- カメラプレビュー（チェキフレーム） -->
-    <div class="flex-1 flex items-center justify-center p-2 min-h-0">
-      <div id="cheki-camera-box" class="cheki-frame w-full max-w-sm">
-        <div class="cheki-photo-area">
-          <video id="webcam" autoplay playsinline muted class="cheki-photo-content mirror-mode"></video>
-          <div id="timer-countdown" class="hidden absolute inset-0 bg-black/60 flex items-center justify-center text-8xl font-black text-amber-400 z-20">
-            3
-          </div>
-        </div>
-        <!-- 下部余白のテキスト表示 (グループ・アイドル名・メンカラ情報) -->
-        <div class="absolute bottom-3 left-4 right-4 flex justify-between items-center text-[10px] font-mono font-bold text-gray-600">
-          <div class="flex items-center gap-1.5 truncate max-w-[65%]">
-            <span id="badge-idol-group" class="bg-gray-200 text-gray-800 px-1.5 py-0.5 rounded text-[9px] truncate">Group</span>
-            <span id="badge-idol-name" class="truncate font-extrabold text-gray-800">Member</span>
-          </div>
-          <span id="frame-date">2026.08.27</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- シャッターボタン -->
-    <div class="flex justify-center items-center pb-4 z-10">
-      <button id="btn-shutter" class="w-16 h-16 bg-white rounded-full border-4 border-pink-500 flex items-center justify-center shadow-2xl active:scale-90 transition">
-        <div class="w-12 h-12 bg-pink-500 rounded-full border-2 border-white"></div>
-      </button>
-    </div>
-  </div>
-
-
-  <!-- ==================== 2. 撮影直後の確認画面 ==================== -->
-  <div id="photo-confirm-screen" class="hidden absolute inset-0 top-[50px] bg-gray-950 z-30 flex flex-col justify-between p-2">
-    <div class="text-center py-1 text-sm font-bold text-pink-400">撮影の確認</div>
-    
-    <div class="flex-1 flex items-center justify-center py-1 overflow-hidden min-h-0">
-      <img id="captured-preview" class="max-h-[75vh] max-w-full object-contain rounded-xl shadow-2xl border border-gray-800" />
-    </div>
-
-    <div class="flex flex-col gap-2 w-full max-w-xs mx-auto pb-2">
-      <button id="btn-go-to-draw" class="w-full py-3 bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition flex items-center justify-center gap-2 text-sm">
-        <i data-lucide="pen-tool" class="w-4 h-4"></i> この写真でデコる (原本保存)
-      </button>
-      <button id="btn-retake" class="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-2xl active:scale-95 transition text-xs">
-        撮り直し
-      </button>
-    </div>
-  </div>
-
-
-  <!-- ==================== 3. 描画・デコレーション画面 ==================== -->
-  <div id="draw-screen" class="hidden absolute inset-0 top-[50px] bg-gray-950 z-40 flex flex-col justify-between">
-    <div id="stamp-guide-banner" class="hidden absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-pink-600 text-white px-4 py-1.5 rounded-full text-xs font-bold shadow-lg flex items-center gap-2">
-      <span id="stamp-guide-text">⭐ 画面をタップして配置</span>
-      <button id="btn-cancel-stamp-mode" class="bg-pink-800 rounded-full w-5 h-5 flex items-center justify-center text-xs">✕</button>
-    </div>
-
-    <div id="canvas-container" class="relative flex-1 w-full h-full overflow-hidden bg-black touch-none flex items-center justify-center">
-      <canvas id="photo-canvas" class="absolute inset-0 w-full h-full object-contain pointer-events-none z-0"></canvas>
-      <canvas id="draw-canvas" class="absolute inset-0 w-full h-full object-contain touch-none z-10"></canvas>
-      <div id="stamp-layer" class="absolute inset-0 touch-none z-20 pointer-events-none"></div>
-    </div>
-
-    <div class="bg-gray-900/95 backdrop-blur-md p-2 pb-5 flex justify-around items-center border-t border-gray-800 z-30">
-      <button id="btn-open-color" class="flex flex-col items-center gap-1 text-[11px] text-gray-300 active:scale-95">
-        <div id="current-color-indicator" class="w-7 h-7 rounded-full border-2 border-white shadow bg-black"></div>
-        <span>色</span>
-      </button>
-
-      <button id="btn-open-pen" class="flex flex-col items-center gap-1 text-[11px] text-gray-300 active:scale-95 relative">
-        <div class="w-7 h-7 rounded-full bg-gray-800 flex items-center justify-center border border-gray-600">
-          <i data-lucide="pen" class="w-3.5 h-3.5 text-pink-400"></i>
-        </div>
-        <div class="flex items-center gap-0.5">
-          <span>ペン</span>
-          <span id="badge-pen-size" class="text-[9px] bg-pink-600 text-white px-1 rounded font-bold">中</span>
-        </div>
-      </button>
-
-      <button id="btn-open-eraser" class="flex flex-col items-center gap-1 text-[11px] text-gray-300 active:scale-95 relative">
-        <div class="w-7 h-7 rounded-full bg-gray-800 flex items-center justify-center border border-gray-600">
-          <i data-lucide="eraser" class="w-3.5 h-3.5 text-amber-400"></i>
-        </div>
-        <div class="flex items-center gap-0.5">
-          <span>消しゴム</span>
-          <span id="badge-eraser-size" class="text-[9px] bg-amber-600 text-white px-1 rounded font-bold">中</span>
-        </div>
-      </button>
-
-      <button id="btn-open-stamp" class="flex flex-col items-center gap-1 text-[11px] text-gray-300 active:scale-95">
-        <div class="w-7 h-7 rounded-full bg-gray-800 flex items-center justify-center border border-gray-600 text-base">⭐</div>
-        <span>スタンプ</span>
-      </button>
-
-      <button id="btn-draw-complete" class="px-4 py-2 bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold rounded-xl shadow-lg active:scale-95 transition flex items-center gap-1 text-xs">
-        <span>完了</span>
-        <i data-lucide="check" class="w-3.5 h-3.5"></i>
-      </button>
-    </div>
-  </div>
-
-
-  <!-- ==================== 4. 描画完了・仕上がり確認画面 ==================== -->
-  <div id="deco-preview-screen" class="hidden absolute inset-0 top-[50px] bg-gray-950 z-45 flex flex-col justify-between p-2">
-    <div class="text-center py-0.5 text-xs font-bold text-pink-400">✨ デコ仕上がり確認 ✨</div>
-    
-    <div class="flex-1 flex items-center justify-center py-1 overflow-hidden min-h-0">
-      <img id="deco-preview-image" class="max-h-[80vh] max-w-full object-contain rounded-xl shadow-2xl border border-gray-800" />
-    </div>
-
-    <div class="flex flex-col gap-2 my-1 w-full max-w-xs mx-auto pb-2">
-      <button id="btn-save-to-album" class="w-full py-3 bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition flex items-center justify-center gap-2 text-sm">
-        <i data-lucide="save" class="w-4 h-4"></i> アルバムに保存して完了
-      </button>
-      <button id="btn-back-to-edit" class="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold rounded-2xl active:scale-95 transition text-center text-xs">
-        修正する (描画へ戻る)
-      </button>
-    </div>
-  </div>
-
-
-  <!-- ==================== 5. アルバム専用閲覧モード画面 (余白極小・2x2固定) ==================== -->
-  <div id="album-screen" class="hidden absolute inset-0 top-[50px] bg-gray-950 z-30 flex flex-col p-2 overflow-y-auto">
-    <div class="flex justify-between items-center px-1 pb-1 border-b border-gray-800 mb-2">
-      <div>
-        <h2 class="text-sm font-bold text-pink-400">チェキアルバム</h2>
-        <p class="text-[9px] text-gray-400">保存済みチェキ一覧</p>
-      </div>
-      <span id="album-count-badge" class="bg-gray-800 text-pink-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-gray-700">0枚</span>
-    </div>
-
-    <!-- アルバムグリッド表示領域 (2列構成でサイズを統一) -->
-    <div id="album-grid" class="grid grid-cols-2 gap-2 pb-4 items-start content-start">
-      <div id="album-empty-msg" class="col-span-2 flex flex-col items-center justify-center py-16 text-gray-500 gap-2">
-        <i data-lucide="image-off" class="w-10 h-10 text-gray-600"></i>
-        <p class="text-xs">アルバムにチェキがありません</p>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- ==================== 6. アルバム詳細・Before/After比較ビューアーモーダル ==================== -->
-  <div id="modal-album-detail" class="hidden fixed inset-0 modal-backdrop z-50 flex flex-col justify-between p-2">
-    <div class="flex justify-between items-center py-1 px-1">
-      <span class="text-xs font-bold text-pink-400" id="detail-date-label">2026.08.27</span>
-      
-      <div class="flex items-center bg-gray-800 rounded-full p-0.5 border border-gray-700">
-        <button id="btn-view-deco" class="px-2.5 py-0.5 bg-pink-600 text-white rounded-full text-[9px] font-bold shadow">デコ (deco)</button>
-        <button id="btn-view-orig" class="px-2.5 py-0.5 text-gray-400 rounded-full text-[9px] font-bold">原本 (raw)</button>
-      </div>
-      <button id="btn-close-detail" class="bg-gray-800 p-1.5 rounded-full text-gray-300">
-        <i data-lucide="x" class="w-4 h-4"></i>
-      </button>
-    </div>
-
-    <div class="flex-1 flex flex-col items-center justify-center my-1 relative overflow-hidden min-h-0">
-      <img id="detail-viewer-img" class="max-h-[80vh] max-w-full object-contain rounded-xl shadow-2xl border border-gray-800" />
-      <p class="absolute bottom-2 text-[9px] bg-black/75 text-amber-300 px-2.5 py-0.5 rounded-full pointer-events-none shadow border border-amber-500/30">
-        💡 長押しで原本(raw)を表示
-      </p>
-    </div>
-
-    <div class="flex justify-around gap-2 max-w-xs mx-auto w-full pb-2">
-      <button id="btn-download-item" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1 shadow">
-        <i data-lucide="download" class="w-3.5 h-3.5"></i> 端末に保存
-      </button>
-      <button id="btn-delete-item" class="py-2 px-3 bg-red-600/80 hover:bg-red-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1">
-        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> 削除
-      </button>
-    </div>
-  </div>
-
-
-  <!-- ==================== 7. 設定モーダル（グループ名・推しメン名・メンカラ設定） ==================== -->
-  <div id="modal-settings" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
-    <div class="bg-gray-900 rounded-3xl p-5 w-full max-w-sm border border-gray-700 shadow-2xl flex flex-col max-h-[85vh]">
-      <div class="flex justify-between items-center mb-3 border-b border-gray-800 pb-2">
-        <h3 class="text-sm font-bold text-pink-400 flex items-center gap-1.5">
-          <i data-lucide="settings" class="w-4 h-4"></i> アイドル・メンカラ設定
-        </h3>
-        <button id="btn-close-settings" class="bg-gray-800 text-gray-300 rounded-full p-1 hover:bg-gray-700">
-          <i data-lucide="x" class="w-4 h-4"></i>
+    <!-- ヘッダー（グループ・メンバー表示＆コントロール類） -->
+    <header class="bg-slate-900/90 backdrop-blur border-b border-slate-800/80 px-3 py-2 z-40 flex items-center justify-between flex-shrink-0">
+        <!-- 左側：グループ・メンバー名切替ボタン -->
+        <button id="btn-quick-select" class="bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-xs text-slate-200 px-3 py-1.5 rounded-full border border-slate-700 shadow-sm flex items-center space-x-1.5 transition">
+            <span id="badge-idol-group" class="bg-white/20 text-white px-1.5 py-0.5 rounded text-[9px] truncate max-w-[70px]">グループ</span>
+            <span id="badge-idol-name" class="font-bold">メンバー</span>
+            <i class="fa-solid fa-chevron-down text-[10px] text-slate-400 ml-0.5"></i>
         </button>
-      </div>
 
-      <!-- 新規登録 / 編集フォーム -->
-      <div class="bg-gray-800/80 p-3 rounded-2xl mb-3 border border-gray-700 flex flex-col gap-2">
-        <span class="text-[11px] font-bold text-gray-300">新規追加・編集</span>
-        <input type="hidden" id="edit-target-id" value="">
-        <input type="text" id="input-group-name" placeholder="グループ名 (例: 〇〇フェス / 推しグル)" class="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-pink-500">
+        <!-- 右側コントロール -->
+        <div class="flex items-center space-x-1.5">
+            <button id="btn-flash" class="bg-slate-800 hover:bg-slate-700 text-slate-200 w-8 h-8 rounded-full flex items-center justify-center border border-slate-700 transition">
+                <i class="fa-solid fa-bolt text-xs"></i>
+            </button>
+            <button id="btn-camera-flip" class="bg-slate-800 hover:bg-slate-700 text-slate-200 w-8 h-8 rounded-full flex items-center justify-center border border-slate-700 transition">
+                <i class="fa-solid fa-rotate text-xs"></i>
+            </button>
+            <button id="btn-timer" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 h-8 rounded-full text-xs border border-slate-700 flex items-center space-x-1 transition">
+                <i class="fa-regular fa-clock text-xs"></i>
+                <span id="timer-label">OFF</span>
+            </button>
+            <button id="btn-open-settings" class="bg-slate-800 hover:bg-slate-700 text-slate-200 w-8 h-8 rounded-full flex items-center justify-center border border-slate-700 transition">
+                <i class="fa-solid fa-gear text-xs text-pink-400"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ領域 -->
+    <main id="main-container" class="flex-1 flex flex-col items-center justify-center relative overflow-hidden p-2 min-h-0">
         
-        <div class="flex gap-2">
-          <input type="text" id="input-member-name" placeholder="アイドル名 / メンバー名" class="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-pink-500">
-          
-          <div class="flex items-center gap-1 bg-gray-900 border border-gray-700 rounded-xl px-2 py-1">
-            <input type="color" id="input-member-color" value="#EC4899" class="w-7 h-7 rounded border-0 cursor-pointer bg-transparent">
-            <span class="text-[10px] text-gray-400">メンカラ</span>
-          </div>
-        </div>
-
-        <button id="btn-save-idol-setting" class="w-full py-2 bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-xl text-xs active:scale-95 transition mt-1 shadow">
-          保存する
-        </button>
-      </div>
-
-      <!-- 登録済みリスト -->
-      <div class="flex-1 overflow-y-auto flex flex-col gap-2 pr-1 min-h-[140px]" id="idol-list-container">
-        <!-- JS動的生成 -->
-      </div>
-    </div>
-  </div>
-
-
-  <!-- モーダルパネル類 -->
-  <div id="modal-timer" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
-    <div class="bg-gray-800 rounded-3xl p-6 w-full max-w-xs text-center border border-gray-700 shadow-2xl mb-12">
-      <h3 class="text-lg font-bold mb-4 text-white">タイマー設定</h3>
-      <div class="flex flex-col gap-2.5">
-        <button class="btn-select-timer py-3 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white" data-value="0">オフ</button>
-        <button class="btn-select-timer py-3 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white" data-value="3">3秒</button>
-        <button class="btn-select-timer py-3 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white" data-value="5">5秒</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="modal-color" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
-    <div class="bg-gray-800 rounded-3xl p-6 w-full max-w-xs border border-gray-700 shadow-2xl mb-12">
-      <h3 class="text-lg font-bold mb-4 text-center text-white">カラー選択</h3>
-      <div class="grid grid-cols-3 gap-3" id="color-palette-grid"></div>
-      <button class="btn-close-modal w-full mt-5 py-3 bg-gray-700 text-white font-bold rounded-2xl">決定</button>
-    </div>
-  </div>
-
-  <div id="modal-pen" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
-    <div class="bg-gray-800 rounded-3xl p-6 w-full max-w-xs text-center border border-gray-700 shadow-2xl mb-12">
-      <h3 class="text-lg font-bold mb-4 text-white">ペン先の太さ</h3>
-      <div class="flex flex-col gap-3">
-        <button class="btn-select-pen py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="14" data-label="太">
-          <span>太ペン</span> <div class="w-6 h-6 rounded-full bg-white"></div>
-        </button>
-        <button class="btn-select-pen py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="7" data-label="中">
-          <span>中ペン（標準）</span> <div class="w-4 h-4 rounded-full bg-white"></div>
-        </button>
-        <button class="btn-select-pen py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="3" data-label="細">
-          <span>細ペン</span> <div class="w-2 h-2 rounded-full bg-white"></div>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <div id="modal-eraser" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
-    <div class="bg-gray-800 rounded-3xl p-6 w-full max-w-xs text-center border border-gray-700 shadow-2xl mb-12">
-      <h3 class="text-lg font-bold mb-4 text-white">消しゴム設定</h3>
-      <div class="flex flex-col gap-3">
-        <button class="btn-select-eraser py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="32" data-label="太">
-          <span>太い</span> <div class="w-7 h-7 rounded-full border-2 border-white"></div>
-        </button>
-        <button class="btn-select-eraser py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="18" data-label="中">
-          <span>中（標準）</span> <div class="w-5 h-5 rounded-full border-2 border-white"></div>
-        </button>
-        <button class="btn-select-eraser py-3.5 bg-gray-700 hover:bg-gray-600 rounded-2xl font-bold text-white flex items-center justify-between px-6" data-size="8" data-label="細">
-          <span>細い</span> <div class="w-3 h-3 rounded-full border-2 border-white"></div>
-        </button>
-        <hr class="border-gray-700 my-1">
-        <button id="btn-clear-all" class="py-3.5 bg-red-600/90 hover:bg-red-600 rounded-2xl font-bold text-white flex items-center justify-center gap-2">
-          <i data-lucide="trash-2" class="w-5 h-5"></i> 全消し 🗑️
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <div id="modal-stamp" class="hidden fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4">
-    <div class="bg-gray-800 rounded-3xl p-6 w-full max-w-xs text-center border border-gray-700 shadow-2xl mb-12">
-      <h3 class="text-lg font-bold mb-4 text-white">スタンプ選択</h3>
-      <div class="grid grid-cols-2 gap-4">
-        <button class="btn-select-stamp p-4 bg-gray-700 hover:bg-gray-600 rounded-2xl text-4xl" data-stamp="⭐">⭐</button>
-        <button class="btn-select-stamp p-4 bg-gray-700 hover:bg-gray-600 rounded-2xl text-4xl" data-stamp="💖">💖</button>
-        <button class="btn-select-stamp p-4 bg-gray-700 hover:bg-gray-600 rounded-2xl text-4xl" data-stamp="✨">✨</button>
-        <button class="btn-select-stamp p-4 bg-gray-700 hover:bg-gray-600 rounded-2xl text-4xl" data-stamp="🐾">🐾</button>
-      </div>
-      <button class="btn-close-modal w-full mt-5 py-3 bg-gray-700 text-white font-bold rounded-2xl">閉じる</button>
-    </div>
-  </div>
-
-
-  <!-- JavaScript メインロジック -->
-  <script>
-    const state = {
-      currentFacingMode: 'user',
-      flashOn: false,
-      timerSec: 0,
-      currentPhotoData: null,
-      currentPhotoRawID: '',
-      currentDateStr: '',
-      
-      // 描画状態 (pen | eraser | null)
-      isDrawing: false,
-      currentMode: 'pen',
-      currentColor: '#000000',
-      penLineWidth: 7,
-      eraserLineWidth: 18,
-      penSizeLabel: '中',
-      eraserSizeLabel: '中',
-      
-      // スタンプ管理
-      stamps: [],
-      pendingStampChar: null,
-      activeDragStampId: null,
-      selectedStampId: null,
-      dragOffset: { x: 0, y: 0 },
-
-      // アルバム閲覧状態
-      currentActiveTab: 'camera',
-      albumItems: [],
-      selectedAlbumItem: null,
-      viewerMode: 'deco',
-      cardViewModes: {},
-
-      // アイドル設定データ
-      idolSettings: [],
-      selectedIdolId: null
-    };
-
-    const COLOR_PALETTE = [
-      { name: '黒', hex: '#000000' },
-      { name: '白', hex: '#FFFFFF' },
-      { name: '赤', hex: '#EF4444' },
-      { name: '青', hex: '#1D4ED8' },
-      { name: '黄', hex: '#FFFF00' },
-      { name: '紫', hex: '#FF00FF' },
-      { name: '緑', hex: '#047857' },
-      { name: 'ピンク', hex: '#EC4899' },
-      { name: '水色', hex: '#06B6D4' },
-      { name: 'オレンジ', hex: '#F97316' }
-    ];
-
-    const video = document.getElementById('webcam');
-    const photoCanvas = document.getElementById('photo-canvas');
-    const drawCanvas = document.getElementById('draw-canvas');
-    const photoCtx = photoCanvas.getContext('2d');
-    const drawCtx = drawCanvas.getContext('2d');
-    const stampLayer = document.getElementById('stamp-layer');
-
-    let db = null;
-    function initIndexedDB() {
-      return new Promise((resolve, reject) => {
-        const req = indexedDB.open('ChekiSnapDB', 2);
-        req.onupgradeneeded = (e) => {
-          const database = e.target.result;
-          if (!database.objectStoreNames.contains('chekis')) {
-            database.createObjectStore('chekis', { keyPath: 'id' });
-          }
-          if (!database.objectStoreNames.contains('idols')) {
-            database.createObjectStore('idols', { keyPath: 'id' });
-          }
-        };
-        req.onsuccess = (e) => {
-          db = e.target.result;
-          resolve(db);
-        };
-        req.onerror = (e) => reject(e);
-      });
-    }
-
-    async function saveChekiToDB(item) {
-      if (!db) await initIndexedDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction('chekis', 'readwrite');
-        const store = tx.objectStore('chekis');
-        store.put(item);
-        tx.oncomplete = () => resolve();
-        tx.onerror = (e) => reject(e);
-      });
-    }
-
-    async function getAllChekisFromDB() {
-      if (!db) await initIndexedDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction('chekis', 'readonly');
-        const store = tx.objectStore('chekis');
-        const req = store.getAll();
-        req.onsuccess = () => resolve(req.result || []);
-        req.onerror = (e) => reject(e);
-      });
-    }
-
-    async function deleteChekiFromDB(id) {
-      if (!db) await initIndexedDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction('chekis', 'readwrite');
-        const store = tx.objectStore('chekis');
-        store.delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = (e) => reject(e);
-      });
-    }
-
-    // アイドル設定用DB操作
-    async function saveIdolToDB(item) {
-      if (!db) await initIndexedDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction('idols', 'readwrite');
-        const store = tx.objectStore('idols');
-        store.put(item);
-        tx.oncomplete = () => resolve();
-        tx.onerror = (e) => reject(e);
-      });
-    }
-
-    async function getAllIdolsFromDB() {
-      if (!db) await initIndexedDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction('idols', 'readonly');
-        const store = tx.objectStore('idols');
-        const req = store.getAll();
-        req.onsuccess = () => resolve(req.result || []);
-        req.onerror = (e) => reject(e);
-      });
-    }
-
-    async function deleteIdolFromDB(id) {
-      if (!db) await initIndexedDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction('idols', 'readwrite');
-        const store = tx.objectStore('idols');
-        store.delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = (e) => reject(e);
-      });
-    }
-
-    async function generateUniquePhotoID(dateStr) {
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-      const existingChekis = await getAllChekisFromDB();
-      const existingIDsToday = new Set(
-        existingChekis
-          .filter(c => c.dateStr === dateStr)
-          .map(c => c.photoId)
-      );
-
-      let newId = '';
-      let attempts = 0;
-      do {
-        newId = '';
-        for (let i = 0; i < 4; i++) {
-          newId += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        attempts++;
-      } while (existingIDsToday.has(newId) && attempts < 100);
-
-      return newId;
-    }
-
-    window.addEventListener('DOMContentLoaded', async () => {
-      lucide.createIcons();
-      await initIndexedDB();
-      await loadIdolSettings();
-      await initDateAndID();
-      initCamera();
-      initColorPaletteUI();
-      setupEventListeners();
-    });
-
-    async function loadIdolSettings() {
-      const idols = await getAllIdolsFromDB();
-      if (idols.length === 0) {
-        const defaultItem = {
-          id: 'idol_' + Date.now(),
-          groupName: '推しグループ',
-          memberName: '推しメン',
-          color: '#EC4899',
-          selected: true
-        };
-        await saveIdolToDB(defaultItem);
-        state.idolSettings = [defaultItem];
-        state.selectedIdolId = defaultItem.id;
-      } else {
-        state.idolSettings = idols;
-        const selected = idols.find(i => i.selected) || idols[0];
-        state.selectedIdolId = selected.id;
-      }
-      updateIdolBadgeUI();
-    }
-
-    function updateIdolBadgeUI() {
-      const active = state.idolSettings.find(i => i.id === state.selectedIdolId) || state.idolSettings[0];
-      const groupBadge = document.getElementById('badge-idol-group');
-      const nameBadge = document.getElementById('badge-idol-name');
-
-      if (active) {
-        groupBadge.innerText = active.groupName;
-        nameBadge.innerText = active.memberName;
-        nameBadge.style.color = active.color;
-      } else {
-        groupBadge.innerText = '未設定';
-        nameBadge.innerText = '----';
-        nameBadge.style.color = '#1f2937';
-      }
-    }
-
-    async function initDateAndID() {
-      const now = new Date();
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const dd = String(now.getDate()).padStart(2, '0');
-      state.currentDateStr = `${yyyy}.${mm}.${dd}`;
-
-      state.currentPhotoRawID = await generateUniquePhotoID(state.currentDateStr);
-
-      document.getElementById('frame-date').innerText = state.currentDateStr;
-    }
-
-    // --- カメラ制御 ---
-    let mediaStream = null;
-    async function initCamera() {
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop());
-        mediaStream = null;
-      }
-
-      state.flashOn = false;
-      updateFlashIconUI();
-      updateCameraLabelUI();
-
-      try {
-        const constraints = {
-          video: {
-            facingMode: { exact: state.currentFacingMode },
-            width: { ideal: 1280 },
-            height: { ideal: 960 }
-          },
-          audio: false
-        };
-        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (err) {
-        try {
-          const fallbackConstraints = {
-            video: {
-              facingMode: state.currentFacingMode,
-              width: { ideal: 1280 },
-              height: { ideal: 960 }
-            },
-            audio: false
-          };
-          mediaStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
-        } catch (fallbackErr) {
-          console.error("カメラ起動エラー:", fallbackErr);
-          return;
-        }
-      }
-
-      video.srcObject = mediaStream;
-      await video.play().catch(e => console.error("Video Play Error:", e));
-    }
-
-    function updateCameraLabelUI() {
-      const label = document.getElementById('label-camera-mode');
-      if (state.currentFacingMode === 'user') {
-        label.innerText = 'イン📷';
-        video.classList.add('mirror-mode');
-      } else {
-        label.innerText = 'アウト📷';
-        video.classList.remove('mirror-mode');
-      }
-    }
-
-    function updateFlashIconUI() {
-      const icon = document.getElementById('icon-flash');
-      const label = document.getElementById('label-flash');
-      if (state.flashOn) {
-        icon.setAttribute('data-lucide', 'zap');
-        icon.className = 'w-3.5 h-3.5 text-amber-400';
-        label.innerText = 'ON';
-      } else {
-        icon.setAttribute('data-lucide', 'zap-off');
-        icon.className = 'w-3.5 h-3.5 text-gray-400';
-        label.innerText = 'OFF';
-      }
-      lucide.createIcons();
-    }
-
-    function initColorPaletteUI() {
-      const grid = document.getElementById('color-palette-grid');
-      grid.innerHTML = '';
-      COLOR_PALETTE.forEach(c => {
-        const btn = document.createElement('button');
-        btn.className = 'flex flex-col items-center justify-center p-2 rounded-2xl bg-gray-700 hover:bg-gray-600 transition active:scale-95';
-        btn.innerHTML = `
-          <div class="w-8 h-8 rounded-full border-2 border-white shadow mb-1" style="background-color: ${c.hex}"></div>
-          <span class="text-xs text-gray-200 font-medium">${c.name}</span>
-        `;
-        btn.onclick = () => {
-          state.currentColor = c.hex;
-          state.currentMode = 'pen';
-          cancelStampPlacementMode();
-          document.getElementById('current-color-indicator').style.backgroundColor = c.hex;
-          closeAllModals();
-        };
-        grid.appendChild(btn);
-      });
-      document.getElementById('current-color-indicator').style.backgroundColor = state.currentColor;
-    }
-
-    function setupEventListeners() {
-      // タブ切替
-      document.getElementById('tab-btn-camera').onclick = () => switchTab('camera');
-      document.getElementById('tab-btn-album').onclick = () => switchTab('album');
-
-      // 設定モーダル開閉
-      document.getElementById('btn-open-settings').onclick = () => {
-        renderIdolSettingsUI();
-        document.getElementById('modal-settings').classList.remove('hidden');
-      };
-      document.getElementById('btn-close-settings').onclick = () => {
-        document.getElementById('modal-settings').classList.add('hidden');
-      };
-
-      // アイドル設定保存ボタン
-      document.getElementById('btn-save-idol-setting').onclick = async () => {
-        const editId = document.getElementById('edit-target-id').value;
-        const groupName = document.getElementById('input-group-name').value.trim() || 'グループ名';
-        const memberName = document.getElementById('input-member-name').value.trim() || 'メンバー名';
-        const color = document.getElementById('input-member-color').value;
-
-        const newItem = {
-          id: editId || ('idol_' + Date.now()),
-          groupName: groupName,
-          memberName: memberName,
-          color: color,
-          selected: true
-        };
-
-        state.idolSettings.forEach(i => i.selected = false);
-        await saveIdolToDB(newItem);
-        for (const i of state.idolSettings) {
-          if (i.id !== newItem.id) {
-            i.selected = false;
-            await saveIdolToDB(i);
-          }
-        }
-
-        document.getElementById('edit-target-id').value = '';
-        document.getElementById('input-group-name').value = '';
-        document.getElementById('input-member-name').value = '';
-        
-        await loadIdolSettings();
-        showToast("設定を保存しました");
-      };
-
-      // カメラ切替
-      document.getElementById('btn-switch-camera').onclick = () => {
-        state.currentFacingMode = (state.currentFacingMode === 'user') ? 'environment' : 'user';
-        initCamera();
-      };
-
-      document.getElementById('btn-toggle-flash').onclick = async () => {
-        if (!mediaStream) return;
-        const track = mediaStream.getVideoTracks()[0];
-        if (!track) return;
-
-        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-        if (capabilities.torch) {
-          state.flashOn = !state.flashOn;
-          try {
-            await track.applyConstraints({ advanced: [{ torch: state.flashOn }] });
-            updateFlashIconUI();
-          } catch (e) {
-            console.error("Flash Error:", e);
-          }
-        } else {
-          state.flashOn = !state.flashOn;
-          updateFlashIconUI();
-        }
-      };
-
-      document.getElementById('btn-timer-menu').onclick = () => {
-        document.getElementById('modal-timer').classList.remove('hidden');
-      };
-
-      document.querySelectorAll('.btn-select-timer').forEach(btn => {
-        btn.onclick = (e) => {
-          state.timerSec = parseInt(e.currentTarget.dataset.value);
-          document.getElementById('label-timer').innerText = state.timerSec === 0 ? 'オフ' : `${state.timerSec}秒`;
-          closeAllModals();
-        };
-      });
-
-      // シャッター
-      document.getElementById('btn-shutter').onclick = takePhoto;
-
-      // 撮影確認画面から描画へ移行
-      document.getElementById('btn-go-to-draw').onclick = () => {
-        if (state.currentPhotoData) {
-          saveImageLocally(state.currentPhotoData, `Cheki_${state.currentPhotoRawID}(raw)_Original.png`);
-        }
-        goToDrawScreen();
-      };
-
-      document.getElementById('btn-retake').onclick = () => {
-        document.getElementById('photo-confirm-screen').classList.add('hidden');
-        document.getElementById('camera-screen').classList.remove('hidden');
-      };
-
-      // デコツールバー
-      document.getElementById('btn-open-color').onclick = () => document.getElementById('modal-color').classList.remove('hidden');
-      
-      document.getElementById('btn-open-pen').onclick = () => {
-        state.currentMode = 'pen';
-        cancelStampPlacementMode();
-        document.getElementById('modal-pen').classList.remove('hidden');
-      };
-
-      document.getElementById('btn-open-eraser').onclick = () => {
-        state.currentMode = 'eraser';
-        cancelStampPlacementMode();
-        document.getElementById('modal-eraser').classList.remove('hidden');
-      };
-
-      document.getElementById('btn-open-stamp').onclick = () => document.getElementById('modal-stamp').classList.remove('hidden');
-
-      document.querySelectorAll('.btn-select-pen').forEach(btn => {
-        btn.onclick = (e) => {
-          state.penLineWidth = parseInt(e.currentTarget.dataset.size);
-          state.penSizeLabel = e.currentTarget.dataset.label;
-          state.currentMode = 'pen';
-          cancelStampPlacementMode();
-          document.getElementById('badge-pen-size').innerText = state.penSizeLabel;
-          closeAllModals();
-        };
-      });
-
-      document.querySelectorAll('.btn-select-eraser').forEach(btn => {
-        btn.onclick = (e) => {
-          state.eraserLineWidth = parseInt(e.currentTarget.dataset.size);
-          state.eraserSizeLabel = e.currentTarget.dataset.label;
-          state.currentMode = 'eraser';
-          cancelStampPlacementMode();
-          document.getElementById('badge-eraser-size').innerText = state.eraserSizeLabel;
-          closeAllModals();
-        };
-      });
-
-      document.getElementById('btn-clear-all').onclick = () => {
-        drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-        state.stamps = [];
-        state.selectedStampId = null;
-        renderStamps();
-        closeAllModals();
-      };
-
-      document.querySelectorAll('.btn-select-stamp').forEach(btn => {
-        btn.onclick = (e) => {
-          const char = e.currentTarget.dataset.stamp;
-          setStampPlacementMode(char);
-          closeAllModals();
-        };
-      });
-
-      document.getElementById('btn-cancel-stamp-mode').onclick = cancelStampPlacementMode;
-
-      document.querySelectorAll('.btn-close-modal').forEach(btn => {
-        btn.onclick = closeAllModals;
-      });
-
-      // 描画完了 → プレビュー確認画面
-      document.getElementById('btn-draw-complete').onclick = goToDecoPreviewScreen;
-
-      // デコ仕上がり確定 → アルバム保存
-      document.getElementById('btn-save-to-album').onclick = async () => {
-        const decoDataUrl = generateMergedHighResDataURL();
-        const newItem = {
-          id: 'cheki_' + Date.now(),
-          dateStr: state.currentDateStr,
-          photoId: state.currentPhotoRawID,
-          originalDataUrl: state.currentPhotoData,
-          decoDataUrl: decoDataUrl,
-          createdAt: new Date().getTime()
-        };
-
-        await saveChekiToDB(newItem);
-        saveImageLocally(decoDataUrl, `Cheki_${state.currentPhotoRawID}(deco)_Deco.png`);
-
-        document.getElementById('deco-preview-screen').classList.add('hidden');
-        document.getElementById('camera-screen').classList.remove('hidden');
-        await initDateAndID();
-        initCamera();
-      };
-
-      document.getElementById('btn-back-to-edit').onclick = () => {
-        document.getElementById('deco-preview-screen').classList.add('hidden');
-        document.getElementById('draw-screen').classList.remove('hidden');
-        resizeCanvases();
-      };
-
-      // アルバム詳細ビューアーコントロール
-      document.getElementById('btn-close-detail').onclick = () => {
-        document.getElementById('modal-album-detail').classList.add('hidden');
-      };
-
-      document.getElementById('btn-view-deco').onclick = () => setViewerMode('deco');
-      document.getElementById('btn-view-orig').onclick = () => setViewerMode('original');
-
-      // 詳細画面長押し比較
-      const detailImg = document.getElementById('detail-viewer-img');
-      detailImg.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        setViewerMode('original');
-      });
-      detailImg.addEventListener('touchend', () => setViewerMode('deco'));
-      detailImg.addEventListener('mousedown', () => setViewerMode('original'));
-      detailImg.addEventListener('mouseup', () => setViewerMode('deco'));
-
-      // アルバムアイテム個別ダウンロード
-      document.getElementById('btn-download-item').onclick = () => {
-        if (!state.selectedAlbumItem) return;
-        const targetUrl = state.viewerMode === 'original' 
-          ? state.selectedAlbumItem.originalDataUrl 
-          : state.selectedAlbumItem.decoDataUrl;
-        const tag = state.viewerMode === 'original' ? 'raw' : 'deco';
-        
-        saveImageLocally(targetUrl, `Cheki_${state.selectedAlbumItem.photoId}(${tag}).png`);
-      };
-
-      // アルバムアイテム削除
-      document.getElementById('btn-delete-item').onclick = async () => {
-        if (!state.selectedAlbumItem) return;
-        if (confirm("このチェキをアルバムから削除しますか？")) {
-          await deleteChekiFromDB(state.selectedAlbumItem.id);
-          showToast("削除しました");
-          document.getElementById('modal-album-detail').classList.add('hidden');
-          loadAlbumGrid();
-        }
-      };
-
-      setupCanvasDrawing();
-    }
-
-    function renderIdolSettingsUI() {
-      const container = document.getElementById('idol-list-container');
-      container.innerHTML = '';
-
-      if (state.idolSettings.length === 0) {
-        container.innerHTML = `<div class="text-center text-gray-500 text-xs py-4">登録がありません</div>`;
-        return;
-      }
-
-      state.idolSettings.forEach(item => {
-        const isSelected = (item.id === state.selectedIdolId);
-        const card = document.createElement('div');
-        card.className = `p-2.5 rounded-2xl flex items-center justify-between border transition ${isSelected ? 'bg-pink-950/40 border-pink-500' : 'bg-gray-800 border-gray-700'}`;
-        
-        card.innerHTML = `
-          <div class="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer select-idol">
-            <div class="w-5 h-5 rounded-full border border-white/50 flex-shrink-0 shadow" style="background-color: ${item.color}"></div>
-            <div class="flex flex-col truncate">
-              <span class="text-[10px] text-gray-400 truncate">${item.groupName}</span>
-              <span class="text-xs font-bold text-white truncate">${item.memberName}</span>
+        <!-- ================= 1. カメラビュー ================= -->
+        <div id="view-camera" class="w-full h-full flex flex-col items-center justify-center relative overflow-hidden">
+            
+            <!-- カウントダウン -->
+            <div id="timer-countdown-overlay" class="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden pointer-events-none">
+                <span id="timer-countdown-number" class="text-8xl font-black text-pink-400 animate-pulse">3</span>
             </div>
-          </div>
-          <div class="flex items-center gap-1.5 flex-shrink-0">
-            <button class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-lg text-[10px] font-bold text-gray-300 btn-edit-idol">編集</button>
-            <button class="p-1 bg-red-900/60 hover:bg-red-800 rounded-lg text-red-300 btn-del-idol"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
-          </div>
-        `;
 
-        card.querySelector('.select-idol').onclick = async () => {
-          state.selectedIdolId = item.id;
-          for (const i of state.idolSettings) {
-            i.selected = (i.id === item.id);
-            await saveIdolToDB(i);
-          }
-          updateIdolBadgeUI();
-          renderIdolSettingsUI();
-          showToast("推しメンを切り替えました");
+            <!-- チェキ風フレーム容器（上下左右にバランスよく収まるよう最大化・比率維持） -->
+            <div id="cheki-camera-box" class="w-full max-w-[340px] aspect-[4/5] flex flex-col relative rounded-2xl overflow-hidden shadow-2xl transition-colors duration-300">
+                
+                <!-- ファインダー映像領域（上部を大きく確保） -->
+                <div class="w-full flex-1 bg-slate-950 relative overflow-hidden">
+                    <video id="camera-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+                    <canvas id="photo-canvas" class="absolute inset-0 w-full h-full object-cover hidden"></canvas>
+                </div>
+
+                <!-- チェキ風の下部メタ情報バー -->
+                <div id="camera-footer-bar" class="py-3 px-4 flex justify-between items-center text-[11px] font-mono tracking-wider flex-shrink-0 z-10 transition-colors duration-300">
+                    <span id="frame-date" class="font-bold">2026.08.28</span>
+                    <span id="frame-photo-id">ID: ----</span>
+                    <span id="frame-idol-sign" class="font-bold truncate max-w-[130px] text-right">MEMBER</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= 2. デコレーションビュー ================= -->
+        <div id="view-deco" class="w-full h-full flex flex-col justify-between hidden relative overflow-hidden">
+            
+            <!-- デコツールバー -->
+            <div class="bg-slate-900/90 backdrop-blur px-3 py-1.5 flex justify-between items-center z-20 flex-shrink-0 border-b border-slate-800">
+                <button id="btn-back-to-camera" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs border border-slate-700 flex items-center space-x-1 transition">
+                    <i class="fa-solid fa-arrow-left text-xs"></i>
+                    <span>撮り直す</span>
+                </button>
+
+                <div class="flex space-x-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
+                    <button id="btn-mode-pen" class="px-3 py-1 rounded-lg text-xs font-bold bg-pink-600 text-white transition shadow">ペン</button>
+                    <button id="btn-mode-eraser" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition">消しゴム</button>
+                    <button id="btn-mode-stamp" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition">スタンプ</button>
+                </div>
+
+                <button id="btn-clear-canvas" class="bg-rose-900/40 hover:bg-rose-900/60 text-rose-300 p-2 rounded-lg text-xs border border-rose-800/50 transition">
+                    <i class="fa-solid fa-rotate-right"></i>
+                </button>
+            </div>
+
+            <!-- サイズ変更バー -->
+            <div id="size-control-bar" class="absolute top-12 left-1/2 -translate-x-1/2 flex justify-center items-center space-x-3 bg-slate-900/90 backdrop-blur py-1 px-4 rounded-full border border-slate-700 text-xs z-30 shadow-lg">
+                <span id="size-label-title" class="text-slate-400 font-bold">太さ:</span>
+                <button id="btn-size-sm" class="px-2 py-0.5 rounded bg-slate-700 text-slate-200">細</button>
+                <button id="btn-size-md" class="px-2 py-0.5 rounded bg-pink-600 text-white font-bold">中</button>
+                <button id="btn-size-lg" class="px-2 py-0.5 rounded bg-slate-700 text-slate-200">太</button>
+            </div>
+
+            <!-- デコレーション用チェキ枠ボックス（中央配置） -->
+            <div class="flex-1 flex items-center justify-center relative overflow-hidden py-1">
+                <div id="cheki-deco-box" class="w-full max-w-[340px] aspect-[4/5] flex flex-col relative rounded-2xl overflow-hidden shadow-2xl transition-colors duration-300">
+                    <div id="deco-canvas-wrapper" class="w-full flex-1 relative bg-black overflow-hidden">
+                        <img id="deco-photo-img" class="w-full h-full object-cover pointer-events-none" src="" alt="Captured">
+                        <canvas id="draw-canvas" class="absolute inset-0 w-full h-full cursor-crosshair touch-none"></canvas>
+                        <div id="stamps-layer" class="absolute inset-0 overflow-hidden pointer-events-none"></div>
+                    </div>
+
+                    <div id="deco-footer-bar" class="py-3 px-4 flex justify-between items-center text-[11px] font-mono tracking-wider flex-shrink-0 z-10 pointer-events-none transition-colors duration-300">
+                        <span id="deco-frame-date" class="font-bold">2026.08.28</span>
+                        <span id="deco-frame-photo-id">ID: ----</span>
+                        <span id="deco-frame-idol-sign" class="font-bold truncate max-w-[130px] text-right">MEMBER</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- カラーパレット / スタンプ選択 -->
+            <div class="bg-slate-900/95 backdrop-blur p-2 border-t border-slate-800 z-20 flex-shrink-0">
+                <div id="palette-container" class="flex justify-around items-center overflow-x-auto py-0.5"></div>
+                <div id="stamp-palette-container" class="hidden flex justify-center space-x-2 py-0.5">
+                    <button class="stamp-chooser w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded-lg text-base flex items-center justify-center border border-slate-700">💖</button>
+                    <button class="stamp-chooser w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded-lg text-base flex items-center justify-center border border-slate-700">✨</button>
+                    <button class="stamp-chooser w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded-lg text-base flex items-center justify-center border border-slate-700">推</button>
+                    <button class="stamp-chooser w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded-lg text-base flex items-center justify-center border border-slate-700">⭐</button>
+                    <button class="stamp-chooser w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded-lg text-base flex items-center justify-center border border-slate-700">🎀</button>
+                    <button class="stamp-chooser w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded-lg text-base flex items-center justify-center border border-slate-700">🔥</button>
+                    <button class="stamp-chooser w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded-lg text-base flex items-center justify-center border border-slate-700">🥺</button>
+                </div>
+            </div>
+
+            <!-- 保存ボタン -->
+            <div class="bg-slate-900 px-3 py-2 flex-shrink-0 border-t border-slate-800">
+                <button id="btn-save-deco" class="w-full py-2.5 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl font-bold text-xs shadow-lg shadow-pink-500/30 active:scale-[0.98] transition flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-download"></i>
+                    <span>チェキを保存する / 共有</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- ================= 3. アルバムビュー ================= -->
+        <div id="view-album" class="w-full h-full flex flex-col p-2 hidden relative overflow-y-auto">
+            <h2 class="font-bold text-xs text-slate-300 mb-2 flex items-center">
+                <i class="fa-solid fa-images text-pink-400 mr-2"></i>保存済みチェキアルバム
+            </h2>
+            <div id="album-grid" class="grid grid-cols-2 gap-2.5 pb-20"></div>
+            <div id="album-empty" class="flex-1 flex flex-col items-center justify-center text-center py-12 hidden">
+                <i class="fa-regular fa-face-smile text-slate-600 text-4xl mb-2"></i>
+                <p class="text-xs text-slate-400">保存されたチェキはまだありません</p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 下部タブナビゲーション（シャッター中央） -->
+    <nav class="bg-slate-900/95 backdrop-blur border-t border-slate-800 px-6 pt-2 pb-5 z-40 flex justify-around items-center flex-shrink-0">
+        <button id="nav-btn-camera" class="flex flex-col items-center text-pink-400 transition w-16">
+            <i class="fa-solid fa-camera text-lg mb-0.5"></i>
+            <span class="text-[10px] font-bold">カメラ</span>
+        </button>
+
+        <div class="flex justify-center items-center -mt-4">
+            <button id="btn-shutter" class="w-16 h-16 rounded-full bg-gradient-to-tr from-pink-500 to-rose-400 p-1 shadow-xl shadow-pink-500/40 active:scale-95 transition flex items-center justify-center">
+                <div class="w-13 h-13 rounded-full border-4 border-white bg-transparent flex items-center justify-center">
+                    <div class="w-8 h-8 rounded-full bg-white shadow-inner"></div>
+                </div>
+            </button>
+        </div>
+
+        <button id="nav-btn-album" class="flex flex-col items-center text-slate-400 hover:text-slate-200 transition w-16">
+            <i class="fa-solid fa-photo-film text-lg mb-0.5"></i>
+            <span class="text-[10px]">アルバム</span>
+        </button>
+    </nav>
+
+    <!-- クイック選択モーダル -->
+    <div id="modal-quick-select" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-xs rounded-2xl p-4 shadow-2xl flex flex-col max-h-[80vh] animate-pop">
+            <div class="flex justify-between items-center mb-3 border-b border-slate-800 pb-2">
+                <h3 class="font-bold text-xs text-slate-200 flex items-center">
+                    <i class="fa-solid fa-users text-pink-400 mr-2"></i>メンバーを選択
+                </h3>
+                <button id="btn-close-quick-select" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+            <div id="quick-select-list" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
+        </div>
+    </div>
+
+    <!-- 設定モーダル -->
+    <div id="modal-settings" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-4 shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center mb-3 border-b border-slate-800 pb-2">
+                <h3 class="font-bold text-xs text-slate-200 flex items-center">
+                    <i class="fa-solid fa-users-gear text-pink-400 mr-2"></i>推しメンバー設定
+                </h3>
+                <button id="btn-close-settings" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto space-y-2 mb-3 pr-1">
+                <div class="text-[10px] text-slate-400 font-bold mb-1">登録済みメンバー一覧</div>
+                <div id="settings-member-list" class="space-y-1.5"></div>
+            </div>
+
+            <div class="bg-slate-800/60 border border-slate-700/80 rounded-xl p-3 space-y-2">
+                <div class="text-[11px] font-bold text-pink-300 flex justify-between items-center">
+                    <span id="form-mode-title">推しメンバー追加</span>
+                    <button id="btn-reset-form" class="text-[10px] text-slate-400 hover:text-slate-200 underline">クリア</button>
+                </div>
+                <input type="hidden" id="edit-member-id" value="">
+                
+                <div>
+                    <label class="block text-[10px] text-slate-400 mb-1">グループ名</label>
+                    <div class="flex space-x-2">
+                        <select id="select-group" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500"></select>
+                        <input type="text" id="input-new-group-name" placeholder="新しいグループ名" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500 hidden">
+                        <button id="btn-toggle-new-group" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-2.5 py-1.5 rounded-lg text-xs transition">+ 新規</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] text-slate-400 mb-1">メンバー名</label>
+                    <input type="text" id="input-member-name" placeholder="例: 推しメン" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500">
+                </div>
+
+                <div>
+                    <label class="block text-[10px] text-slate-400 mb-1">メンバーカラー: <span id="selected-color-name" class="font-bold text-white">白</span></label>
+                    <div id="idol-color-picker" class="grid grid-cols-4 gap-1.5 pt-1"></div>
+                </div>
+
+                <button id="btn-save-member" class="w-full py-2 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-xs font-bold transition shadow-md">
+                    メンバーを追加する
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 閲覧モーダル -->
+    <div id="modal-viewer" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-4 shadow-2xl flex flex-col items-center relative max-h-[95vh]">
+            <button id="btn-close-viewer" class="absolute top-3 right-3 text-slate-400 hover:text-white p-2 z-10">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            
+            <h3 class="font-bold text-xs text-slate-300 mb-2">チェキ詳細</h3>
+            
+            <div class="w-full max-w-[280px] aspect-[4/5] bg-white rounded-xl overflow-hidden shadow-2xl mb-4 flex items-center justify-center">
+                <img id="viewer-image" class="w-full h-full object-contain" src="" alt="Cheki">
+            </div>
+
+            <div class="flex space-x-2 w-full">
+                <button id="viewer-btn-download" class="flex-1 py-2.5 bg-pink-600 hover:bg-pink-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5">
+                    <i class="fa-solid fa-download"></i>
+                    <span>保存</span>
+                </button>
+                <button id="viewer-btn-share" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5">
+                    <i class="fa-solid fa-share-nodes"></i>
+                    <span>シェア</span>
+                </button>
+                <button id="viewer-btn-delete" class="px-3 py-2.5 bg-rose-900/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 rounded-xl text-xs font-bold transition">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- アプリケーションロジック -->
+    <script>
+        const IDOL_COLORS = [
+            { name: '白', hex: '#FFFFFF' },
+            { name: '赤', hex: '#EF4444' },
+            { name: '青', hex: '#0000FF' },
+            { name: '黄', hex: '#FFFF00' },
+            { name: '紫', hex: '#ff00ff' },
+            { name: '緑', hex: '#228B22' },
+            { name: 'ピンク', hex: '#EC4899' },
+            { name: 'パステルブルー', hex: '#7DD3FC' },
+            { name: 'エメラルドグリーン', hex: '#10B981' },
+            { name: 'オレンジ', hex: '#F97316' },
+            { name: '黒', hex: '#1E293B' }
+        ];
+
+        const DRAWING_COLORS = [
+            { name: '白', hex: '#FFFFFF' },
+            { name: '黒', hex: '#1E293B' },
+            { name: '赤', hex: '#EF4444' },
+            { name: '青', hex: '#0000FF' },
+            { name: '黄', hex: '#FFFF00' },
+            { name: '紫', hex: '#ff00ff' },
+            { name: '緑', hex: '#228B22' },
+            { name: 'ピンク', hex: '#EC4899' },
+            { name: 'パステルブルー', hex: '#7DD3FC' },
+            { name: 'エメラルドグリーン', hex: '#10B981' },
+            { name: 'オレンジ', hex: '#F97316' }
+        ];
+
+        const state = {
+            currentFacingMode: 'user',
+            flashOn: false,
+            timerSec: 0,
+            currentPhotoData: null,
+            currentPhotoRawID: '',
+            currentDateStr: '',
+            
+            isDrawing: false,
+            currentMode: 'pen',
+            currentColor: '#FFFFFF',
+            penLineWidth: 7,
+            eraserLineWidth: 18,
+            penSizeLabel: '中',
+            eraserSizeLabel: '中',
+            
+            stamps: [],
+            activeDragStampId: null,
+            dragOffset: { x: 0, y: 0 },
+
+            currentActiveTab: 'camera',
+            albumItems: [],
+            selectedAlbumItem: null,
+
+            members: [],
+            selectedMemberId: null,
+            selectedColor: '#FFFFFF',
+            selectedColorName: '白',
+            isCreatingNewGroup: false
         };
 
-        card.querySelector('.btn-edit-idol').onclick = () => {
-          document.getElementById('edit-target-id').value = item.id;
-          document.getElementById('input-group-name').value = item.groupName;
-          document.getElementById('input-member-name').value = item.memberName;
-          document.getElementById('input-member-color').value = item.color;
-        };
+        const STORAGE_KEY_MEMBERS = 'cheki_snap_members_v4';
+        const STORAGE_KEY_ALBUM = 'cheki_snap_album_v4';
 
-        card.querySelector('.btn-del-idol').onclick = async () => {
-          if (state.idolSettings.length <= 1) {
-            alert("少なくとも1件の設定が必要です。");
-            return;
-          }
-          if (confirm("この設定を削除しますか？")) {
-            await deleteIdolFromDB(item.id);
-            await loadIdolSettings();
-            renderIdolSettingsUI();
-            showToast("削除しました");
-          }
-        };
+        const videoEl = document.getElementById('camera-video');
+        const photoCanvas = document.getElementById('photo-canvas');
+        const drawCanvas = document.getElementById('draw-canvas');
+        const shutterFlash = document.getElementById('shutter-flash');
 
-        container.appendChild(card);
-      });
-      lucide.createIcons();
-    }
-
-    function switchTab(tab) {
-      state.currentActiveTab = tab;
-      const cameraBtn = document.getElementById('tab-btn-camera');
-      const albumBtn = document.getElementById('tab-btn-album');
-
-      if (tab === 'camera') {
-        cameraBtn.className = "flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-pink-600 text-white shadow";
-        albumBtn.className = "flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-gray-800 text-gray-300 hover:bg-gray-700";
-
-        document.getElementById('album-screen').classList.add('hidden');
-        document.getElementById('camera-screen').classList.remove('hidden');
-        initCamera();
-      } else {
-        albumBtn.className = "flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-pink-600 text-white shadow";
-        cameraBtn.className = "flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition bg-gray-800 text-gray-300 hover:bg-gray-700";
-
-        document.getElementById('camera-screen').classList.add('hidden');
-        document.getElementById('photo-confirm-screen').classList.add('hidden');
-        document.getElementById('draw-screen').classList.add('hidden');
-        document.getElementById('deco-preview-screen').classList.add('hidden');
-        document.getElementById('album-screen').classList.remove('hidden');
-
-        loadAlbumGrid();
-      }
-    }
-
-    async function loadAlbumGrid() {
-      const items = await getAllChekisFromDB();
-      state.albumItems = items.sort((a, b) => b.createdAt - a.createdAt);
-
-      const grid = document.getElementById('album-grid');
-      const emptyMsg = document.getElementById('album-empty-msg');
-      document.getElementById('album-count-badge').innerText = `${state.albumItems.length}枚`;
-
-      grid.innerHTML = '';
-      if (state.albumItems.length === 0) {
-        grid.appendChild(emptyMsg);
-        return;
-      }
-
-      state.albumItems.forEach(item => {
-        if (!state.cardViewModes[item.id]) {
-          state.cardViewModes[item.id] = 'deco';
-        }
-        const currentCardMode = state.cardViewModes[item.id];
-        const displayUrl = currentCardMode === 'deco' ? item.decoDataUrl : item.originalDataUrl;
-        const tagLabel = currentCardMode === 'deco' ? 'deco' : 'raw';
-
-        const card = document.createElement('div');
-        card.className = "bg-white text-gray-900 rounded-lg p-1 shadow flex flex-col justify-between relative border border-gray-200 w-full";
-        
-        card.innerHTML = `
-          <div class="flex justify-between items-center mb-1 bg-gray-100 p-0.5 rounded border border-gray-200 z-10">
-            <button class="btn-card-mode flex-1 py-0.5 text-[8px] font-bold rounded ${currentCardMode === 'deco' ? 'bg-pink-600 text-white shadow' : 'text-gray-600'}" data-id="${item.id}" data-mode="deco">デコ</button>
-            <button class="btn-card-mode flex-1 py-0.5 text-[8px] font-bold rounded ${currentCardMode === 'original' ? 'bg-pink-600 text-white shadow' : 'text-gray-600'}" data-id="${item.id}" data-mode="original">原本</button>
-          </div>
-
-          <div class="btn-open-detail relative w-full pb-[125%] bg-black rounded overflow-hidden cursor-pointer active:scale-95 transition">
-            <img src="${displayUrl}" class="absolute inset-0 w-full h-full object-cover" />
-          </div>
-
-          <div class="btn-open-detail flex justify-between items-center text-[8px] font-mono font-bold text-gray-600 px-0.5 mt-1 cursor-pointer">
-            <span>${item.dateStr}</span>
-            <span class="text-pink-600 font-extrabold">${item.photoId}(${tagLabel})</span>
-          </div>
-        `;
-
-        card.querySelectorAll('.btn-card-mode').forEach(b => {
-          b.onclick = (e) => {
-            e.stopPropagation();
-            const mode = e.currentTarget.dataset.mode;
-            state.cardViewModes[item.id] = mode;
-            loadAlbumGrid();
-          };
+        window.addEventListener('DOMContentLoaded', async () => {
+            initDateAndID();
+            await initMembers();
+            initCameraStream();
+            initColorPaletteUI();
+            initIdolColorPaletteUI();
+            initEventListeners();
+            loadAlbumFromStorage();
         });
 
-        card.querySelectorAll('.btn-open-detail').forEach(el => {
-          el.onclick = () => openAlbumDetail(item);
+        function initDateAndID() {
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            state.currentDateStr = `${y}.${m}.${d}`;
+            state.currentPhotoRawID = Math.floor(1000 + Math.random() * 9000);
+
+            document.getElementById('frame-date').innerText = state.currentDateStr;
+            document.getElementById('frame-photo-id').innerText = `ID: ${state.currentPhotoRawID}`;
+            document.getElementById('deco-frame-date').innerText = state.currentDateStr;
+            document.getElementById('deco-frame-photo-id').innerText = `ID: ${state.currentPhotoRawID}`;
+        }
+
+        async function initMembers() {
+            const saved = localStorage.getItem(STORAGE_KEY_MEMBERS);
+            if (saved) {
+                try {
+                    state.members = JSON.parse(saved);
+                } catch (e) {
+                    state.members = [];
+                }
+            }
+
+            if (state.members.length === 0) {
+                const defaultMember = {
+                    id: 'mem_' + Date.now(),
+                    groupName: 'グループA',
+                    memberName: 'メンバー1',
+                    color: '#FFFFFF'
+                };
+                state.members = [defaultMember];
+                saveMembersToStorage();
+            }
+
+            state.selectedMemberId = state.members[0].id;
+            updateIdolBadgeUI();
+        }
+
+        function saveMembersToStorage() {
+            localStorage.setItem(STORAGE_KEY_MEMBERS, JSON.stringify(state.members));
+        }
+
+        function getContrastTextColor(hexColor) {
+            if (!hexColor) return '#1f2937';
+            let cleanHex = hexColor.replace('#', '');
+            if (cleanHex.length === 3) {
+                cleanHex = cleanHex.split('').map(c => c + c).join('');
+            }
+            const r = parseInt(cleanHex.substr(0, 2), 16) || 0;
+            const g = parseInt(cleanHex.substr(2, 2), 16) || 0;
+            const b = parseInt(cleanHex.substr(4, 2), 16) || 0;
+            const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+            return yiq >= 150 ? '#1f2937' : '#FFFFFF';
+        }
+
+        function updateIdolBadgeUI() {
+            if (!state.selectedMemberId && state.members.length > 0) {
+                state.selectedMemberId = state.members[0].id;
+            }
+            const active = state.members.find(m => m.id === state.selectedMemberId) || state.members[0];
+            if (!active) return;
+
+            const groupBadge = document.getElementById('badge-idol-group');
+            const nameBadge = document.getElementById('badge-idol-name');
+            const chekiCamBox = document.getElementById('cheki-camera-box');
+            const chekiDecoBox = document.getElementById('cheki-deco-box');
+            const cameraFooterBar = document.getElementById('camera-footer-bar');
+            const decoFooterBar = document.getElementById('deco-footer-bar');
+            const frameIdolSign = document.getElementById('frame-idol-sign');
+            const decoFrameIdolSign = document.getElementById('deco-frame-idol-sign');
+            const frameDate = document.getElementById('frame-date');
+            const framePhotoId = document.getElementById('frame-photo-id');
+            const decoFrameDate = document.getElementById('deco-frame-date');
+            const decoFramePhotoId = document.getElementById('deco-frame-photo-id');
+
+            groupBadge.innerText = active.groupName;
+            nameBadge.innerText = active.memberName;
+            
+            const signText = `${active.memberName} (${active.groupName})`;
+            frameIdolSign.innerText = signText;
+            decoFrameIdolSign.innerText = signText;
+
+            chekiCamBox.style.backgroundColor = active.color;
+            chekiDecoBox.style.backgroundColor = active.color;
+            cameraFooterBar.style.backgroundColor = active.color;
+            decoFooterBar.style.backgroundColor = active.color;
+
+            const textColor = getContrastTextColor(active.color);
+            const subTextColor = textColor === '#FFFFFF' ? 'rgba(255, 255, 255, 0.85)' : '#4B5563';
+
+            if (textColor === '#FFFFFF') {
+                groupBadge.className = "bg-white/20 text-white px-1.5 py-0.5 rounded text-[9px] truncate max-w-[70px] border border-white/30";
+            } else {
+                groupBadge.className = "bg-black/10 text-gray-800 px-1.5 py-0.5 rounded text-[9px] truncate max-w-[70px] border border-black/10";
+            }
+            nameBadge.style.color = textColor;
+
+            frameIdolSign.style.color = textColor;
+            decoFrameIdolSign.style.color = textColor;
+            frameDate.style.color = subTextColor;
+            framePhotoId.style.color = subTextColor;
+            decoFrameDate.style.color = subTextColor;
+            decoFramePhotoId.style.color = subTextColor;
+        }
+
+        let currentStream = null;
+
+        async function initCameraStream() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: state.currentFacingMode,
+                        width: { ideal: 1080 },
+                        height: { ideal: 1920 }
+                    },
+                    audio: false
+                };
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoEl.srcObject = currentStream;
+            } catch (err) {
+                console.error("Camera error:", err);
+            }
+        }
+
+        function initEventListeners() {
+            document.getElementById('nav-btn-camera').onclick = () => switchTab('camera');
+            document.getElementById('nav-btn-album').onclick = () => switchTab('album');
+
+            document.getElementById('btn-quick-select').onclick = () => {
+                renderQuickSelectModalUI();
+                document.getElementById('modal-quick-select').classList.remove('hidden');
+            };
+            document.getElementById('btn-close-quick-select').onclick = () => {
+                document.getElementById('modal-quick-select').classList.add('hidden');
+            };
+
+            document.getElementById('btn-camera-flip').onclick = () => {
+                state.currentFacingMode = state.currentFacingMode === 'user' ? 'environment' : 'user';
+                initCameraStream();
+            };
+
+            document.getElementById('btn-flash').onclick = async () => {
+                state.flashOn = !state.flashOn;
+                const btn = document.getElementById('btn-flash');
+                if (state.flashOn) {
+                    btn.classList.add('bg-amber-500', 'text-slate-950', 'border-amber-400');
+                    btn.classList.remove('bg-slate-800', 'text-slate-200');
+                } else {
+                    btn.classList.remove('bg-amber-500', 'text-slate-950', 'border-amber-400');
+                    btn.classList.add('bg-slate-800', 'text-slate-200');
+                }
+            };
+
+            document.getElementById('btn-timer').onclick = () => {
+                if (state.timerSec === 0) state.timerSec = 3;
+                else if (state.timerSec === 3) state.timerSec = 5;
+                else state.timerSec = 0;
+                document.getElementById('timer-label').innerText = state.timerSec === 0 ? 'OFF' : `${state.timerSec}秒`;
+            };
+
+            document.getElementById('btn-shutter').onclick = () => {
+                if (state.timerSec > 0) {
+                    runTimerAndCapture(state.timerSec);
+                } else {
+                    capturePhoto();
+                }
+            };
+
+            document.getElementById('btn-back-to-camera').onclick = () => switchTab('camera');
+
+            document.getElementById('btn-mode-pen').onclick = () => setDrawingMode('pen');
+            document.getElementById('btn-mode-eraser').onclick = () => setDrawingMode('eraser');
+            document.getElementById('btn-mode-stamp').onclick = () => setDrawingMode('stamp');
+
+            document.getElementById('btn-size-sm').onclick = () => setBrushSize('sm');
+            document.getElementById('btn-size-md').onclick = () => setBrushSize('md');
+            document.getElementById('btn-size-lg').onclick = () => setBrushSize('lg');
+
+            document.getElementById('btn-clear-canvas').onclick = () => {
+                const ctx = drawCanvas.getContext('2d');
+                ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+                state.stamps = [];
+                renderStampsDOM();
+            };
+
+            document.getElementById('btn-open-settings').onclick = () => {
+                renderSettingsModalUI();
+                document.getElementById('modal-settings').classList.remove('hidden');
+            };
+            document.getElementById('btn-close-settings').onclick = () => {
+                document.getElementById('modal-settings').classList.add('hidden');
+            };
+
+            document.getElementById('btn-toggle-new-group').onclick = () => {
+                state.isCreatingNewGroup = !state.isCreatingNewGroup;
+                const selectGroup = document.getElementById('select-group');
+                const inputGroup = document.getElementById('input-new-group-name');
+                const btnToggle = document.getElementById('btn-toggle-new-group');
+
+                if (state.isCreatingNewGroup) {
+                    selectGroup.classList.add('hidden');
+                    inputGroup.classList.remove('hidden');
+                    inputGroup.focus();
+                    btnToggle.innerText = '既存から選択';
+                } else {
+                    selectGroup.classList.remove('hidden');
+                    inputGroup.classList.add('hidden');
+                    btnToggle.innerText = '+ 新規';
+                }
+            };
+
+            document.getElementById('btn-save-member').onclick = saveMemberFromForm;
+            document.getElementById('btn-reset-form').onclick = resetMemberForm;
+
+            document.querySelectorAll('.stamp-chooser').forEach(btn => {
+                btn.onclick = () => addStampToCanvas(btn.dataset.char);
+            });
+
+            document.getElementById('btn-save-deco').onclick = saveFinishedCheki;
+
+            document.getElementById('btn-close-viewer').onclick = () => {
+                document.getElementById('modal-viewer').classList.add('hidden');
+            };
+            document.getElementById('viewer-btn-download').onclick = downloadSelectedAlbumItem;
+            document.getElementById('viewer-btn-share').onclick = shareSelectedAlbumItem;
+            document.getElementById('viewer-btn-delete').onclick = deleteSelectedAlbumItem;
+
+            setupCanvasDrawingEvents();
+        }
+
+        function switchTab(tabName) {
+            state.currentActiveTab = tabName;
+            const viewCam = document.getElementById('view-camera');
+            const viewDeco = document.getElementById('view-deco');
+            const viewAlbum = document.getElementById('view-album');
+            const navCam = document.getElementById('nav-btn-camera');
+            const navAlbum = document.getElementById('nav-btn-album');
+
+            viewCam.classList.add('hidden');
+            viewDeco.classList.add('hidden');
+            viewAlbum.classList.add('hidden');
+
+            [navCam, navAlbum].forEach(n => {
+                n.classList.remove('text-pink-400', 'font-bold');
+                n.classList.add('text-slate-400');
+            });
+
+            if (tabName === 'camera') {
+                viewCam.classList.remove('hidden');
+                navCam.classList.add('text-pink-400', 'font-bold');
+                navCam.classList.remove('text-slate-400');
+            } else if (tabName === 'deco') {
+                viewDeco.classList.remove('hidden');
+            } else if (tabName === 'album') {
+                viewAlbum.classList.remove('hidden');
+                navAlbum.classList.add('text-pink-400', 'font-bold');
+                navAlbum.classList.remove('text-slate-400');
+                renderAlbumGrid();
+            }
+        }
+
+        function runTimerAndCapture(sec) {
+            const overlay = document.getElementById('timer-countdown-overlay');
+            const numEl = document.getElementById('timer-countdown-number');
+            overlay.classList.remove('hidden');
+            
+            let count = sec;
+            numEl.innerText = count;
+
+            const timerInterval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    numEl.innerText = count;
+                } else {
+                    clearInterval(timerInterval);
+                    overlay.classList.add('hidden');
+                    capturePhoto();
+                }
+            }, 1000);
+        }
+
+        function capturePhoto() {
+            shutterFlash.classList.add('active');
+            setTimeout(() => shutterFlash.classList.remove('active'), 200);
+
+            const videoWidth = videoEl.videoWidth || 1080;
+            const videoHeight = videoEl.videoHeight || 1920;
+
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = videoWidth;
+            tempCanvas.height = videoHeight;
+            const ctx = tempCanvas.getContext('2d');
+
+            if (state.currentFacingMode === 'user') {
+                ctx.translate(videoWidth, 0);
+                ctx.scale(-1, 1);
+            }
+
+            try {
+                ctx.drawImage(videoEl, 0, 0, videoWidth, videoHeight);
+            } catch (e) {
+                ctx.fillStyle = '#334155';
+                ctx.fillRect(0, 0, videoWidth, videoHeight);
+            }
+
+            state.currentPhotoData = tempCanvas.toDataURL('image/png');
+            
+            const decoImg = document.getElementById('deco-photo-img');
+            decoImg.src = state.currentPhotoData;
+
+            setTimeout(() => {
+                const wrapper = document.getElementById('deco-canvas-wrapper');
+                drawCanvas.width = wrapper.clientWidth;
+                drawCanvas.height = wrapper.clientHeight;
+                const dCtx = drawCanvas.getContext('2d');
+                dCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+                state.stamps = [];
+                renderStampsDOM();
+            }, 50);
+
+            switchTab('deco');
+        }
+
+        function initColorPaletteUI() {
+            const container = document.getElementById('palette-container');
+            container.innerHTML = '';
+
+            DRAWING_COLORS.forEach(c => {
+                const btn = document.createElement('button');
+                btn.className = `flex flex-col items-center justify-center p-1 rounded-xl transition transform hover:scale-105 flex-shrink-0 ${state.currentColor === c.hex ? 'bg-slate-800 ring-2 ring-pink-500' : 'bg-transparent'}`;
+                btn.innerHTML = `
+                    <div class="w-6 h-6 rounded-full border border-white/50 shadow" style="background-color: ${c.hex}"></div>
+                    <span class="text-[9px] text-slate-300 mt-0.5">${c.name}</span>
+                `;
+                btn.onclick = () => {
+                    state.currentColor = c.hex;
+                    initColorPaletteUI();
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        function setDrawingMode(mode) {
+            state.currentMode = mode;
+            const btnPen = document.getElementById('btn-mode-pen');
+            const btnEraser = document.getElementById('btn-mode-eraser');
+            const btnStamp = document.getElementById('btn-mode-stamp');
+            const paletteContainer = document.getElementById('palette-container');
+            const stampContainer = document.getElementById('stamp-palette-container');
+            const sizeBar = document.getElementById('size-control-bar');
+
+            [btnPen, btnEraser, btnStamp].forEach(b => {
+                b.className = "px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition";
+            });
+
+            if (mode === 'pen') {
+                btnPen.className = "px-3 py-1 rounded-lg text-xs font-bold bg-pink-600 text-white transition shadow";
+                paletteContainer.classList.remove('hidden');
+                stampContainer.classList.add('hidden');
+                sizeBar.classList.remove('hidden');
+                document.getElementById('size-label-title').innerText = '太さ:';
+                updateSizeButtonsState(state.penSizeLabel);
+            } else if (mode === 'eraser') {
+                btnEraser.className = "px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 text-white transition shadow";
+                paletteContainer.classList.add('hidden');
+                stampContainer.classList.add('hidden');
+                sizeBar.classList.remove('hidden');
+                document.getElementById('size-label-title').innerText = '消しゴム:';
+                updateSizeButtonsState(state.eraserSizeLabel);
+            } else if (mode === 'stamp') {
+                btnStamp.className = "px-3 py-1 rounded-lg text-xs font-bold bg-amber-600 text-white transition shadow";
+                paletteContainer.classList.add('hidden');
+                stampContainer.classList.remove('hidden');
+                sizeBar.classList.add('hidden');
+            }
+        }
+
+        function setBrushSize(sizeKey) {
+            if (state.currentMode === 'pen') {
+                state.penSizeLabel = sizeKey;
+                if (sizeKey === 'sm') state.penLineWidth = 3;
+                if (sizeKey === 'md') state.penLineWidth = 7;
+                if (sizeKey === 'lg') state.penLineWidth = 15;
+                updateSizeButtonsState(sizeKey);
+            } else if (state.currentMode === 'eraser') {
+                state.eraserSizeLabel = sizeKey;
+                if (sizeKey === 'sm') state.eraserLineWidth = 10;
+                if (sizeKey === 'md') state.eraserLineWidth = 18;
+                if (sizeKey === 'lg') state.eraserLineWidth = 30;
+                updateSizeButtonsState(sizeKey);
+            }
+        }
+
+        function updateSizeButtonsState(activeKey) {
+            ['sm', 'md', 'lg'].forEach(k => {
+                const btn = document.getElementById(`btn-size-${k}`);
+                if (k === activeKey) {
+                    btn.className = "px-2.5 py-0.5 rounded bg-pink-600 text-white font-bold transition";
+                } else {
+                    btn.className = "px-2.5 py-0.5 rounded bg-slate-700 text-slate-200 transition";
+                }
+            });
+        }
+
+        function setupCanvasDrawingEvents() {
+            const ctx = drawCanvas.getContext('2d');
+
+            function getPos(e) {
+                const rect = drawCanvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return {
+                    x: clientX - rect.left,
+                    y: clientY - rect.top
+                };
+            }
+
+            const startDraw = (e) => {
+                if (state.currentMode === 'stamp') return;
+                state.isDrawing = true;
+                const pos = getPos(e);
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+            };
+
+            const draw = (e) => {
+                if (!state.isDrawing || state.currentMode === 'stamp') return;
+                e.preventDefault();
+                const pos = getPos(e);
+
+                ctx.lineTo(pos.x, pos.y);
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+
+                if (state.currentMode === 'pen') {
+                    ctx.strokeStyle = state.currentColor;
+                    ctx.lineWidth = state.penLineWidth;
+                    ctx.globalCompositeOperation = 'source-over';
+                } else if (state.currentMode === 'eraser') {
+                    ctx.lineWidth = state.eraserLineWidth;
+                    ctx.globalCompositeOperation = 'destination-out';
+                }
+                ctx.stroke();
+            };
+
+            const stopDraw = () => {
+                if (!state.isDrawing) return;
+                state.isDrawing = false;
+                ctx.closePath();
+            };
+
+            drawCanvas.addEventListener('mousedown', startDraw);
+            drawCanvas.addEventListener('mousemove', draw);
+            drawCanvas.addEventListener('mouseup', stopDraw);
+            drawCanvas.addEventListener('mouseleave', stopDraw);
+
+            drawCanvas.addEventListener('touchstart', startDraw, { passive: false });
+            drawCanvas.addEventListener('touchmove', draw, { passive: false });
+            drawCanvas.addEventListener('touchend', stopDraw);
+        }
+
+        function addStampToCanvas(char) {
+            const wrapper = document.getElementById('deco-canvas-wrapper');
+            const newStamp = {
+                id: 'stamp_' + Date.now() + Math.random(),
+                char: char,
+                x: wrapper.clientWidth / 2 - 20,
+                y: wrapper.clientHeight / 2 - 20
+            };
+            state.stamps.push(newStamp);
+            renderStampsDOM();
+        }
+
+        function renderStampsDOM() {
+            const layer = document.getElementById('stamps-layer');
+            layer.innerHTML = '';
+
+            state.stamps.forEach(s => {
+                const el = document.createElement('div');
+                el.className = 'absolute text-3xl select-none stamp-item animate-pop flex items-center justify-center p-2';
+                el.style.left = `${s.x}px`;
+                el.style.top = `${s.y}px`;
+                el.innerText = s.char;
+
+                const onDragStart = (e) => {
+                    e.stopPropagation();
+                    state.activeDragStampId = s.id;
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    state.dragOffset = {
+                        x: clientX - s.x,
+                        y: clientY - s.y
+                    };
+                };
+
+                el.addEventListener('mousedown', onDragStart);
+                el.addEventListener('touchstart', onDragStart, { passive: true });
+
+                layer.appendChild(el);
+            });
+        }
+
+        window.addEventListener('mousemove', (e) => {
+            if (!state.activeDragStampId) return;
+            const target = state.stamps.find(st => st.id === state.activeDragStampId);
+            if (!target) return;
+
+            const wrapper = document.getElementById('deco-canvas-wrapper');
+            const rect = wrapper.getBoundingClientRect();
+            target.x = Math.max(0, Math.min(rect.width - 40, e.clientX - rect.left - 20));
+            target.y = Math.max(0, Math.min(rect.height - 40, e.clientY - rect.top - 20));
+
+            renderStampsDOM();
         });
 
-        grid.appendChild(card);
-      });
-    }
-
-    function openAlbumDetail(item) {
-      state.selectedAlbumItem = item;
-      setViewerMode('deco');
-      document.getElementById('modal-album-detail').classList.remove('hidden');
-    }
-
-    function setViewerMode(mode) {
-      state.viewerMode = mode;
-      const decoBtn = document.getElementById('btn-view-deco');
-      const origBtn = document.getElementById('btn-view-orig');
-      const img = document.getElementById('detail-viewer-img');
-      const label = document.getElementById('detail-date-label');
-
-      const item = state.selectedAlbumItem;
-      if (!item) return;
-
-      if (mode === 'deco') {
-        decoBtn.className = "px-2.5 py-0.5 bg-pink-600 text-white rounded-full text-[9px] font-bold shadow";
-        origBtn.className = "px-2.5 py-0.5 text-gray-400 rounded-full text-[9px] font-bold";
-        img.src = item.decoDataUrl;
-        label.innerText = `${item.dateStr} (ID:${item.photoId}(deco))`;
-      } else {
-        origBtn.className = "px-2.5 py-0.5 bg-pink-600 text-white rounded-full text-[9px] font-bold shadow";
-        decoBtn.className = "px-2.5 py-0.5 text-gray-400 rounded-full text-[9px] font-bold";
-        img.src = item.originalDataUrl;
-        label.innerText = `${item.dateStr} (ID:${item.photoId}(raw))`;
-      }
-    }
-
-    function closeAllModals() {
-      document.querySelectorAll('#modal-timer, #modal-color, #modal-pen, #modal-eraser, #modal-stamp, #modal-settings').forEach(m => m.classList.add('hidden'));
-    }
-
-    function showToast(msg) {
-      const toast = document.getElementById('toast-notification');
-      document.getElementById('toast-message').innerText = msg;
-      toast.classList.remove('opacity-0', '-translate-y-4');
-      toast.classList.add('opacity-100', 'translate-y-0');
-      setTimeout(() => {
-        toast.classList.remove('opacity-100', 'translate-y-0');
-        toast.classList.add('opacity-0', '-translate-y-4');
-      }, 2500);
-    }
-
-    function setStampPlacementMode(char) {
-      state.pendingStampChar = char;
-      document.getElementById('stamp-guide-text').innerText = `${char} 配置場所をタップ (配置後ペンタップで解除)`;
-      document.getElementById('stamp-guide-banner').classList.remove('hidden');
-    }
-
-    function finishStampPlacement() {
-      state.pendingStampChar = null;
-      state.currentMode = null; 
-      document.getElementById('stamp-guide-text').innerText = `スタンプ配置完了 (ペンまたは消しゴムを選択してください)`;
-      document.getElementById('stamp-guide-banner').classList.remove('hidden');
-    }
-
-    function cancelStampPlacementMode() {
-      state.pendingStampChar = null;
-      document.getElementById('stamp-guide-banner').classList.add('hidden');
-    }
-
-    function takePhoto() {
-      if (state.timerSec > 0) {
-        let count = state.timerSec;
-        const countdownEl = document.getElementById('timer-countdown');
-        countdownEl.innerText = count;
-        countdownEl.classList.remove('hidden');
-        const timer = setInterval(() => {
-          count--;
-          if (count > 0) {
-            countdownEl.innerText = count;
-          } else {
-            clearInterval(timer);
-            countdownEl.classList.add('hidden');
-            captureFrame();
-          }
-        }, 1000);
-      } else {
-        captureFrame();
-      }
-    }
-
-    function captureFrame() {
-      const rawTempCanvas = document.createElement('canvas');
-      const videoW = video.videoWidth || 640;
-      const videoH = video.videoHeight || 480;
-      rawTempCanvas.width = videoW;
-      rawTempCanvas.height = videoH;
-      const rawCtx = rawTempCanvas.getContext('2d');
-
-      if (state.currentFacingMode === 'user') {
-        rawCtx.translate(rawTempCanvas.width, 0);
-        rawCtx.scale(-1, 1);
-      }
-      rawCtx.drawImage(video, 0, 0, rawTempCanvas.width, rawTempCanvas.height);
-
-      const frameCanvas = document.createElement('canvas');
-      frameCanvas.width = 800;
-      frameCanvas.height = 1000;
-      const fCtx = frameCanvas.getContext('2d');
-
-      fCtx.fillStyle = '#FFFFFF';
-      fCtx.fillRect(0, 0, 800, 1000);
-
-      const photoX = 24, photoY = 24, photoW = 800 - 48, photoH = 1000 - 144;
-
-      const imgRatio = videoW / videoH;
-      const targetRatio = photoW / photoH;
-      let srcX = 0, srcY = 0, srcW = videoW, srcH = videoH;
-
-      if (imgRatio > targetRatio) {
-        srcW = videoH * targetRatio;
-        srcX = (videoW - srcW) / 2;
-      } else {
-        srcH = videoW / targetRatio;
-        srcY = (videoH - srcH) / 2;
-      }
-
-      fCtx.drawImage(rawTempCanvas, srcX, srcY, srcW, srcH, photoX, photoY, photoW, photoH);
-
-      // フレーム下部にグループ名・推しメン名（メンカラ色）・日付を描画
-      const activeIdol = state.idolSettings.find(i => i.id === state.selectedIdolId) || state.idolSettings[0];
-      const groupTxt = activeIdol ? activeIdol.groupName : '';
-      const memberTxt = activeIdol ? activeIdol.memberName : '';
-      const memberColor = activeIdol ? activeIdol.color : '#1f2937';
-
-      fCtx.font = 'bold 22px monospace';
-      fCtx.textAlign = 'left';
-      fCtx.fillStyle = '#4B5563';
-      fCtx.fillText(`${groupTxt} / `, 32, 940);
-      
-      const groupWidth = fCtx.measureText(`${groupTxt} / `).width;
-      fCtx.fillStyle = memberColor;
-      fCtx.fillText(memberTxt, 32 + groupWidth, 940);
-
-      fCtx.fillStyle = '#4B5563';
-      fCtx.textAlign = 'right';
-      fCtx.fillText(state.currentDateStr, 768, 940);
-
-      state.currentPhotoData = frameCanvas.toDataURL('image/png');
-
-      document.getElementById('captured-preview').src = state.currentPhotoData;
-      document.getElementById('camera-screen').classList.add('hidden');
-      document.getElementById('photo-confirm-screen').classList.remove('hidden');
-    }
-
-    function resizeCanvases() {
-      const container = document.getElementById('canvas-container');
-      const rect = container.getBoundingClientRect();
-
-      if (rect.width === 0 || rect.height === 0) return;
-
-      const targetRatio = 800 / 1000;
-      const containerRatio = rect.width / rect.height;
-
-      let canvasW, canvasH;
-      if (containerRatio > targetRatio) {
-        canvasH = rect.height;
-        canvasW = rect.height * targetRatio;
-      } else {
-        canvasW = rect.width;
-        canvasH = rect.width / targetRatio;
-      }
-
-      photoCanvas.style.width = canvasW + 'px';
-      photoCanvas.style.height = canvasH + 'px';
-      drawCanvas.style.width = canvasW + 'px';
-      drawCanvas.style.height = canvasH + 'px';
-      stampLayer.style.width = canvasW + 'px';
-      stampLayer.style.height = canvasH + 'px';
-
-      photoCanvas.width = canvasW;
-      photoCanvas.height = canvasH;
-      drawCanvas.width = canvasW;
-      drawCanvas.height = canvasH;
-
-      if (state.currentPhotoData) {
-        const img = new Image();
-        img.onload = () => {
-          photoCtx.clearRect(0, 0, photoCanvas.width, photoCanvas.height);
-          photoCtx.drawImage(img, 0, 0, photoCanvas.width, photoCanvas.height);
-        };
-        img.src = state.currentPhotoData;
-      }
-    }
-
-    function goToDrawScreen() {
-      document.getElementById('photo-confirm-screen').classList.add('hidden');
-      document.getElementById('draw-screen').classList.remove('hidden');
-
-      state.stamps = [];
-      state.selectedStampId = null;
-      state.currentMode = 'pen';
-      cancelStampPlacementMode();
-      renderStamps();
-
-      requestAnimationFrame(() => {
-        setTimeout(resizeCanvases, 50);
-      });
-    }
-
-    function goToDecoPreviewScreen() {
-      const mergedDataUrl = generateMergedHighResDataURL();
-      document.getElementById('deco-preview-image').src = mergedDataUrl;
-
-      document.getElementById('draw-screen').classList.add('hidden');
-      document.getElementById('deco-preview-screen').classList.remove('hidden');
-    }
-
-    function setupCanvasDrawing() {
-      function getPos(e) {
-        const rect = drawCanvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        return {
-          x: clientX - rect.left,
-          y: clientY - rect.top
-        };
-      }
-
-      function startDraw(e) {
-        if (state.activeDragStampId) return;
-
-        if (state.pendingStampChar) {
-          const pos = getPos(e);
-          addStampAt(state.pendingStampChar, pos.x, pos.y);
-          finishStampPlacement();
-          return;
-        }
-
-        if (!state.currentMode) return;
-
-        const pos = getPos(e);
-
-        if (state.selectedStampId) {
-          state.selectedStampId = null;
-          renderStamps();
-        }
-
-        state.isDrawing = true;
-        drawCtx.beginPath();
-        drawCtx.moveTo(pos.x, pos.y);
-
-        if (state.currentMode === 'eraser') {
-          drawCtx.globalCompositeOperation = 'destination-out';
-          drawCtx.lineWidth = state.eraserLineWidth;
-        } else {
-          drawCtx.globalCompositeOperation = 'source-over';
-          drawCtx.strokeStyle = state.currentColor;
-          drawCtx.lineWidth = state.penLineWidth;
-          drawCtx.lineCap = 'round';
-          drawCtx.lineJoin = 'round';
-        }
-      }
-
-      function moveDraw(e) {
-        if (!state.isDrawing || state.activeDragStampId || state.pendingStampChar || !state.currentMode) return;
-        const pos = getPos(e);
-        drawCtx.lineTo(pos.x, pos.y);
-        drawCtx.stroke();
-      }
-
-      function stopDraw() {
-        if (state.isDrawing) {
-          drawCtx.closePath();
-          state.isDrawing = false;
-        }
-      }
-
-      drawCanvas.addEventListener('mousedown', startDraw);
-      drawCanvas.addEventListener('mousemove', moveDraw);
-      drawCanvas.addEventListener('mouseup', stopDraw);
-
-      drawCanvas.addEventListener('touchstart', (e) => {
-        if (state.pendingStampChar) {
-          const pos = getPos(e);
-          addStampAt(state.pendingStampChar, pos.x, pos.y);
-          finishStampPlacement();
-          return;
-        }
-        if (!state.currentMode) return;
-        e.preventDefault();
-        startDraw(e);
-      }, { passive: false });
-
-      drawCanvas.addEventListener('touchmove', (e) => {
-        if (state.activeDragStampId || state.pendingStampChar || !state.currentMode) return;
-        e.preventDefault();
-        moveDraw(e);
-      }, { passive: false });
-
-      drawCanvas.addEventListener('touchend', stopDraw);
-    }
-
-    function addStampAt(char, x, y) {
-      const newId = 'stamp-' + Date.now();
-      const stamp = {
-        id: newId,
-        char: char,
-        x: x,
-        y: y
-      };
-      state.stamps.push(stamp);
-      state.selectedStampId = newId;
-      renderStamps();
-    }
-
-    function renderStamps() {
-      stampLayer.innerHTML = '';
-
-      state.stamps.forEach(s => {
-        const el = document.createElement('div');
-        const isSelected = (s.id === state.selectedStampId);
-
-        el.className = `stamp-element ${isSelected ? 'selected' : ''}`;
-        el.innerText = s.char;
-        el.style.left = s.x + 'px';
-        el.style.top = s.y + 'px';
-
-        if (isSelected) {
-          const deleteBtn = document.createElement('div');
-          deleteBtn.className = 'stamp-delete-btn';
-          deleteBtn.innerText = '✕';
-          
-          const handleDelete = (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            deleteStamp(s.id);
-          };
-          deleteBtn.addEventListener('click', handleDelete);
-          deleteBtn.addEventListener('touchstart', handleDelete, { passive: false });
-
-          el.appendChild(deleteBtn);
-        }
-
-        const handleDragStart = (e) => {
-          e.stopPropagation();
-          state.isDrawing = false;
-          state.selectedStampId = s.id;
-          state.activeDragStampId = s.id;
-
-          const rect = stampLayer.getBoundingClientRect();
-          const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-          const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
-          state.dragOffset = {
-            x: (clientX - rect.left) - s.x,
-            y: (clientY - rect.top) - s.y
-          };
-          renderStamps();
-        };
-
-        el.addEventListener('mousedown', handleDragStart);
-        el.addEventListener('touchstart', (e) => {
-          e.preventDefault();
-          handleDragStart(e);
-        }, { passive: false });
-
-        stampLayer.appendChild(el);
-      });
-    }
-
-    function deleteStamp(id) {
-      state.stamps = state.stamps.filter(s => s.id !== id);
-      if (state.selectedStampId === id) {
-        state.selectedStampId = null;
-      }
-      renderStamps();
-    }
-
-    function onGlobalMove(e) {
-      if (!state.activeDragStampId) return;
-      e.preventDefault();
-
-      const stamp = state.stamps.find(s => s.id === state.activeDragStampId);
-      if (!stamp) return;
-
-      const rect = stampLayer.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
-      stamp.x = (clientX - rect.left) - state.dragOffset.x;
-      stamp.y = (clientY - rect.top) - state.dragOffset.y;
-
-      renderStamps();
-    }
-
-    function onGlobalEnd() {
-      if (state.activeDragStampId) {
-        state.activeDragStampId = null;
-      }
-    }
-
-    window.addEventListener('mousemove', onGlobalMove);
-    window.addEventListener('mouseup', onGlobalEnd);
-    window.addEventListener('touchmove', onGlobalMove, { passive: false });
-    window.addEventListener('touchend', onGlobalEnd);
-
-    function generateMergedHighResDataURL() {
-      const exportCanvas = document.createElement('canvas');
-      exportCanvas.width = 800;
-      exportCanvas.height = 1000;
-      const ctx = exportCanvas.getContext('2d');
-
-      ctx.drawImage(photoCanvas, 0, 0, 800, 1000);
-      ctx.drawImage(drawCanvas, 0, 0, 800, 1000);
-
-      const rect = drawCanvas.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        const scaleX = 800 / rect.width;
-        const scaleY = 1000 / rect.height;
-
-        ctx.font = '55px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        state.stamps.forEach(s => {
-          ctx.fillText(s.char, s.x * scaleX, s.y * scaleY);
+        window.addEventListener('mouseup', () => {
+            state.activeDragStampId = null;
         });
-      }
 
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(450, 915, 330, 45);
+        window.addEventListener('touchmove', (e) => {
+            if (!state.activeDragStampId) return;
+            const target = state.stamps.find(st => st.id === state.activeDragStampId);
+            if (!target) return;
 
-      ctx.fillStyle = '#4B5563';
-      ctx.font = 'bold 24px monospace';
-      ctx.textAlign = 'right';
-      ctx.fillText(`ID: ${state.currentPhotoRawID}(deco)`, 768, 940);
+            const wrapper = document.getElementById('deco-canvas-wrapper');
+            const rect = wrapper.getBoundingClientRect();
+            target.x = Math.max(0, Math.min(rect.width - 40, e.touches[0].clientX - rect.left - 20));
+            target.y = Math.max(0, Math.min(rect.height - 40, e.touches[0].clientY - rect.top - 20));
 
-      return exportCanvas.toDataURL('image/png');
-    }
+            renderStampsDOM();
+        }, { passive: true });
 
-    function saveImageLocally(dataUrl, filename) {
-      try {
-        const arr = dataUrl.split(',');
-        const mime = arr[0].match(/:(.*?);/)[1];
-        const bstr = atob(arr[1]);
-        let n = bstr.length;
-        const u8arr = new Uint8Array(n);
-        while (n--) {
-          u8arr[n] = bstr.charCodeAt(n);
+        window.addEventListener('touchend', () => {
+            state.activeDragStampId = null;
+        });
+
+        function generateMergedHighResDataURL() {
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = 800;
+            exportCanvas.height = 1000;
+            const ctx = exportCanvas.getContext('2d');
+
+            const baseImg = new Image();
+            baseImg.src = state.currentPhotoData;
+            
+            const activeMember = state.members.find(m => m.id === state.selectedMemberId) || state.members[0];
+            const frameColor = activeMember ? activeMember.color : '#FFFFFF';
+            
+            ctx.fillStyle = frameColor;
+            ctx.fillRect(0, 0, 800, 1000);
+
+            const photoX = 0, photoY = 0, photoW = 800, photoH = 900;
+            ctx.drawImage(baseImg, photoX, photoY, photoW, photoH, photoX, photoY, photoW, photoH);
+
+            ctx.drawImage(drawCanvas, 0, 0, 800, 900);
+
+            const rect = drawCanvas.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                const scaleX = 800 / rect.width;
+                const scaleY = 900 / rect.height;
+
+                ctx.font = '55px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                state.stamps.forEach(s => {
+                    ctx.fillText(s.char, s.x * scaleX, s.y * scaleY);
+                });
+            }
+
+            ctx.fillStyle = frameColor;
+            ctx.fillRect(0, 900, 800, 1000);
+
+            const groupTxt = activeMember ? activeMember.groupName : '';
+            const memberTxt = activeMember ? activeMember.memberName : '';
+            const exportTextColor = getContrastTextColor(frameColor);
+            const exportSubTextColor = exportTextColor === '#FFFFFF' ? 'rgba(255, 255, 255, 0.85)' : '#4B5563';
+
+            ctx.font = 'bold 20px monospace';
+            ctx.textBaseline = 'middle';
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = exportSubTextColor;
+            ctx.fillText(state.currentDateStr, 25, 950);
+
+            ctx.textAlign = 'center';
+            ctx.fillStyle = exportSubTextColor;
+            ctx.fillText(`ID: ${state.currentPhotoRawID}`, 330, 950);
+
+            const rightX = 775;
+            ctx.fillStyle = exportTextColor;
+            ctx.font = 'bold 22px monospace';
+            const memberTextW = ctx.measureText(memberTxt).width;
+
+            ctx.textAlign = 'right';
+            ctx.fillStyle = exportSubTextColor;
+            ctx.font = 'bold 20px monospace';
+            ctx.fillText(`)`, rightX, 950);
+
+            ctx.textAlign = 'right';
+            ctx.fillStyle = exportTextColor;
+            ctx.font = 'bold 22px monospace';
+            ctx.fillText(memberTxt, rightX - ctx.measureText(`)`).width, 950);
+
+            ctx.textAlign = 'right';
+            ctx.fillStyle = exportSubTextColor;
+            ctx.font = 'bold 20px monospace';
+            ctx.fillText(` (${groupTxt}`, rightX - ctx.measureText(`)`).width - memberTextW, 950);
+
+            return exportCanvas.toDataURL('image/png');
         }
-        const blob = new Blob([u8arr], { type: mime });
-        const blobUrl = URL.createObjectURL(blob);
 
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        function saveFinishedCheki() {
+            const finalDataUrl = generateMergedHighResDataURL();
+            
+            const newItem = {
+                id: 'cheki_' + Date.now(),
+                dataUrl: finalDataUrl,
+                date: state.currentDateStr,
+                photoId: state.currentPhotoRawID,
+                member: state.members.find(m => m.id === state.selectedMemberId) || null
+            };
 
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-        showToast("端末へ保存しました");
-      } catch (e) {
-        console.error("端末保存エラー:", e);
-      }
-    }
-  </script>
+            state.albumItems.unshift(newItem);
+            saveAlbumToStorage();
+            openViewerModal(newItem);
+        }
+
+        function loadAlbumFromStorage() {
+            const saved = localStorage.getItem(STORAGE_KEY_ALBUM);
+            if (saved) {
+                try {
+                    state.albumItems = JSON.parse(saved);
+                } catch (e) {
+                    state.albumItems = [];
+                }
+            }
+        }
+
+        function saveAlbumToStorage() {
+            localStorage.setItem(STORAGE_KEY_ALBUM, JSON.stringify(state.albumItems));
+        }
+
+        function renderAlbumGrid() {
+            const grid = document.getElementById('album-grid');
+            const empty = document.getElementById('album-empty');
+            grid.innerHTML = '';
+
+            if (state.albumItems.length === 0) {
+                empty.classList.remove('hidden');
+                return;
+            } else {
+                empty.classList.add('hidden');
+            }
+
+            state.albumItems.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow cursor-pointer transform hover:scale-[1.02] transition';
+                card.innerHTML = `
+                    <div class="aspect-[4/5] bg-black overflow-hidden">
+                        <img src="${item.dataUrl}" class="w-full h-full object-cover pointer-events-none" alt="Cheki">
+                    </div>
+                    <div class="p-2 flex justify-between items-center text-[10px] text-slate-400">
+                        <span>${item.date}</span>
+                        <span class="truncate max-w-[80px]">${item.member ? item.member.memberName : ''}</span>
+                    </div>
+                `;
+                card.onclick = () => openViewerModal(item);
+                grid.appendChild(card);
+            });
+        }
+
+        function openViewerModal(item) {
+            state.selectedAlbumItem = item;
+            document.getElementById('viewer-image').src = item.dataUrl;
+            document.getElementById('modal-viewer').classList.remove('hidden');
+        }
+
+        function downloadSelectedAlbumItem() {
+            if (!state.selectedAlbumItem) return;
+            const a = document.createElement('a');
+            a.href = state.selectedAlbumItem.dataUrl;
+            a.download = `ChekiSnap_${state.selectedAlbumItem.date}_${state.selectedAlbumItem.photoId}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        async function shareSelectedAlbumItem() {
+            if (!state.selectedAlbumItem) return;
+            if (navigator.share) {
+                try {
+                    const blob = await (await fetch(state.selectedAlbumItem.dataUrl)).blob();
+                    const file = new File([blob], 'cheki.png', { type: 'image/png' });
+                    await navigator.share({
+                        title: 'ChekiSnap チェキ',
+                        text: '推し活チェキアプリで撮影しました！ #ChekiSnap',
+                        files: [file]
+                    });
+                } catch (e) {
+                    console.log("Share failed", e);
+                }
+            } else {
+                downloadSelectedAlbumItem();
+            }
+        }
+
+        function deleteSelectedAlbumItem() {
+            if (!state.selectedAlbumItem) return;
+            state.albumItems = state.albumItems.filter(i => i.id !== state.selectedAlbumItem.id);
+            saveAlbumToStorage();
+            document.getElementById('modal-viewer').classList.add('hidden');
+            renderAlbumGrid();
+        }
+
+        function initIdolColorPaletteUI() {
+            const picker = document.getElementById('idol-color-picker');
+            picker.innerHTML = '';
+
+            IDOL_COLORS.forEach(c => {
+                const btn = document.createElement('button');
+                btn.className = `flex flex-col items-center justify-center p-1 rounded-xl transition transform hover:scale-105 border ${state.selectedColor.toLowerCase() === c.hex.toLowerCase() ? 'bg-slate-700 border-pink-500 shadow-md' : 'bg-slate-800/60 border-slate-700'}`;
+                btn.innerHTML = `
+                    <div class="w-5 h-5 rounded-full border border-white/40 shadow" style="background-color: ${c.hex}"></div>
+                    <span class="text-[9px] text-slate-300 mt-0.5">${c.name}</span>
+                `;
+                btn.onclick = () => {
+                    state.selectedColor = c.hex;
+                    state.selectedColorName = c.name;
+                    document.getElementById('selected-color-name').innerText = c.name;
+                    initIdolColorPaletteUI();
+                };
+                picker.appendChild(btn);
+            });
+        }
+
+        function renderQuickSelectModalUI() {
+            const listEl = document.getElementById('quick-select-list');
+            listEl.innerHTML = '';
+
+            if (state.members.length === 0) {
+                listEl.innerHTML = `<div class="text-xs text-slate-400 text-center py-4">メンバーが登録されていません</div>`;
+                return;
+            }
+
+            state.members.forEach(m => {
+                const isSelected = (m.id === state.selectedMemberId);
+                const item = document.createElement('button');
+                item.className = `w-full text-left p-2.5 rounded-xl border flex items-center justify-between transition ${isSelected ? 'bg-pink-950/40 border-pink-500/80 text-white' : 'bg-slate-800/60 border-slate-700/80 text-slate-300 hover:bg-slate-700'}`;
+                item.innerHTML = `
+                    <div class="flex items-center space-x-2.5 overflow-hidden">
+                        <div class="w-4 h-4 rounded-full border border-slate-600 flex-shrink-0" style="background-color: ${m.color};"></div>
+                        <div class="truncate">
+                            <span class="text-[9px] text-slate-400 block truncate">${m.groupName}</span>
+                            <span class="text-xs font-bold truncate">${m.memberName}</span>
+                        </div>
+                    </div>
+                    ${isSelected ? '<i class="fa-solid fa-check text-pink-400 text-xs"></i>' : ''}
+                `;
+                item.onclick = () => {
+                    state.selectedMemberId = m.id;
+                    updateIdolBadgeUI();
+                    document.getElementById('modal-quick-select').classList.add('hidden');
+                };
+                listEl.appendChild(item);
+            });
+        }
+
+        function renderSettingsModalUI() {
+            const selectGroup = document.getElementById('select-group');
+            const groups = [...new Set(state.members.map(m => m.groupName))];
+            selectGroup.innerHTML = '';
+            groups.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g;
+                opt.innerText = g;
+                selectGroup.appendChild(opt);
+            });
+
+            const listContainer = document.getElementById('settings-member-list');
+            listContainer.innerHTML = '';
+
+            state.members.forEach(m => {
+                const row = document.createElement('div');
+                row.className = `flex items-center justify-between p-2 rounded-xl border ${m.id === state.selectedMemberId ? 'bg-pink-950/30 border-pink-500/50' : 'bg-slate-800/40 border-slate-700/60'}`;
+                row.innerHTML = `
+                    <div class="flex items-center space-x-2 overflow-hidden">
+                        <div class="w-4 h-4 rounded-full border border-slate-600 flex-shrink-0" style="background-color: ${m.color};"></div>
+                        <div class="truncate">
+                            <span class="text-[9px] text-slate-400 block truncate">${m.groupName}</span>
+                            <span class="text-xs font-bold text-slate-200 truncate">${m.memberName}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-1 flex-shrink-0">
+                        <button data-id="${m.id}" class="btn-select-mem px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-[10px] text-slate-200 transition">選択</button>
+                        <button data-id="${m.id}" class="btn-edit-mem p-1.5 rounded bg-slate-700 hover:bg-slate-600 text-[10px] text-slate-300 transition"><i class="fa-solid fa-pen"></i></button>
+                        <button data-id="${m.id}" class="btn-delete-mem p-1.5 rounded bg-rose-900/40 hover:bg-rose-900/60 text-[10px] text-rose-300 transition"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                `;
+                listContainer.appendChild(row);
+            });
+
+            listContainer.querySelectorAll('.btn-select-mem').forEach(btn => {
+                btn.onclick = () => {
+                    state.selectedMemberId = btn.dataset.id;
+                    updateIdolBadgeUI();
+                    renderSettingsModalUI();
+                };
+            });
+
+            listContainer.querySelectorAll('.btn-edit-mem').forEach(btn => {
+                btn.onclick = () => {
+                    const id = btn.dataset.id;
+                    const target = state.members.find(m => m.id === id);
+                    if (!target) return;
+
+                    document.getElementById('edit-member-id').value = target.id;
+                    document.getElementById('input-member-name').value = target.memberName;
+                    
+                    selectGroup.value = target.groupName;
+                    state.isCreatingNewGroup = false;
+                    document.getElementById('input-new-group-name').classList.add('hidden');
+                    selectGroup.classList.remove('hidden');
+                    document.getElementById('btn-toggle-new-group').innerText = '+ 新規';
+
+                    state.selectedColor = target.color;
+                    const matchedColor = IDOL_COLORS.find(c => c.hex.toLowerCase() === target.color.toLowerCase());
+                    state.selectedColorName = matchedColor ? matchedColor.name : 'カスタム';
+                    document.getElementById('selected-color-name').innerText = state.selectedColorName;
+                    initIdolColorPaletteUI();
+
+                    document.getElementById('form-mode-title').innerText = 'メンバー情報編集';
+                    document.getElementById('btn-save-member').innerText = '更新する';
+                };
+            });
+
+            listContainer.querySelectorAll('.btn-delete-mem').forEach(btn => {
+                btn.onclick = () => {
+                    const id = btn.dataset.id;
+                    if (state.members.length <= 1) return;
+                    state.members = state.members.filter(m => m.id !== id);
+                    if (state.selectedMemberId === id) {
+                        state.selectedMemberId = state.members[0].id;
+                    }
+                    saveMembersToStorage();
+                    updateIdolBadgeUI();
+                    renderSettingsModalUI();
+                };
+            });
+        }
+
+        function saveMemberFromForm() {
+            const editId = document.getElementById('edit-member-id').value;
+            const memberName = document.getElementById('input-member-name').value.trim();
+            if (!memberName) return;
+
+            let groupName = '';
+            if (state.isCreatingNewGroup) {
+                groupName = document.getElementById('input-new-group-name').value.trim() || 'その他グループ';
+            } else {
+                groupName = document.getElementById('select-group').value;
+            }
+
+            if (editId) {
+                const target = state.members.find(m => m.id === editId);
+                if (target) {
+                    target.groupName = groupName;
+                    target.memberName = memberName;
+                    target.color = state.selectedColor;
+                }
+            } else {
+                const newMember = {
+                    id: 'mem_' + Date.now(),
+                    groupName: groupName,
+                    memberName: memberName,
+                    color: state.selectedColor
+                };
+                state.members.push(newMember);
+                state.selectedMemberId = newMember.id;
+            }
+
+            saveMembersToStorage();
+            updateIdolBadgeUI();
+            resetMemberForm();
+            renderSettingsModalUI();
+        }
+
+        function resetMemberForm() {
+            document.getElementById('edit-member-id').value = '';
+            document.getElementById('input-member-name').value = '';
+            document.getElementById('input-new-group-name').value = '';
+            state.isCreatingNewGroup = false;
+            document.getElementById('input-new-group-name').classList.add('hidden');
+            document.getElementById('select-group').classList.remove('hidden');
+            document.getElementById('btn-toggle-new-group').innerText = '+ 新規';
+            document.getElementById('form-mode-title').innerText = '推しメンバー追加';
+            document.getElementById('btn-save-member').innerText = 'メンバーを追加する';
+            
+            state.selectedColor = '#FFFFFF';
+            state.selectedColorName = '白';
+            document.getElementById('selected-color-name').innerText = '白';
+            initIdolColorPaletteUI();
+        }
+    </script>
 </body>
 </html>
